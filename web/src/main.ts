@@ -1,10 +1,23 @@
-import { parseServerMessage, type ServerMessage } from '@offhand/shared';
+import {
+  parseServerMessage,
+  parseRelayFrame,
+  type ClientMessage,
+  type ServerMessage,
+} from '@offhand/shared';
 
 /**
- * M1 bare transcript page. Talks straight to the daemon's localhost WS.
+ * Bare transcript page. Two transports:
+ *  - local (default): straight to the daemon's localhost WS (M1)
+ *  - relay: ?relay=<url>&session=<id> — peer frames through the cloud (M2)
  * Reconnects with backoff and resumes by sequence number — no gaps.
  */
-const DAEMON_URL = 'ws://127.0.0.1:4317';
+const params = new URLSearchParams(location.search);
+const relayUrl = params.get('relay');
+const sessionId = params.get('session');
+const relayMode = Boolean(relayUrl && sessionId);
+const WS_URL = relayMode
+  ? `${relayUrl!.replace(/^http/, 'ws').replace(/\/$/, '')}/ws?session=${encodeURIComponent(sessionId!)}&role=phone`
+  : 'ws://127.0.0.1:4317';
 
 const statusEl = document.getElementById('status')!;
 const transcriptEl = document.getElementById('transcript')!;
@@ -15,20 +28,43 @@ let ws: WebSocket | null = null;
 let lastSeq = 0;
 let retryMs = 500;
 let textSpan: HTMLElement | null = null; // current streaming text node
+let presenceNote = ''; // relay-reported daemon state (honest, always shown)
+
+function sendToDaemon(msg: ClientMessage): void {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  ws.send(JSON.stringify(relayMode ? { kind: 'peer', payload: msg } : msg));
+}
 
 function connect(): void {
-  ws = new WebSocket(DAEMON_URL);
+  ws = new WebSocket(WS_URL);
 
   ws.onopen = () => {
     retryMs = 500;
-    setStatus(`<span class="ok">●</span> connected to daemon`);
-    ws!.send(JSON.stringify({ type: 'resume', afterSeq: lastSeq }));
+    setStatus(`<span class="ok">●</span> connected ${relayMode ? 'via relay' : 'to daemon'}`);
+    sendToDaemon({ type: 'resume', afterSeq: lastSeq });
   };
 
   ws.onmessage = (e) => {
+    const raw = String(e.data);
     let msg: ServerMessage;
     try {
-      msg = parseServerMessage(String(e.data));
+      if (relayMode) {
+        const frame = parseRelayFrame(raw);
+        if (frame.kind === 'presence') {
+          presenceNote = frame.daemonOnline
+            ? ''
+            : ` · <span class="bad">daemon offline</span>${
+                frame.lastSeenMs ? ` (last seen ${new Date(frame.lastSeenMs).toLocaleTimeString()})` : ''
+              }`;
+          setStatus(`<span class="ok">●</span> connected via relay${presenceNote}`);
+          if (frame.daemonOnline) sendToDaemon({ type: 'resume', afterSeq: lastSeq });
+          return;
+        }
+        if (frame.kind !== 'peer') return;
+        msg = parseServerMessage(JSON.stringify(frame.payload));
+      } else {
+        msg = parseServerMessage(raw);
+      }
     } catch {
       return;
     }
@@ -47,10 +83,10 @@ function handle(msg: ServerMessage): void {
     case 'hello':
       setStatus(
         `<span class="ok">●</span> ${escapeHtml(msg.workspace)} · runner: ${msg.runner} ` +
-          (msg.runnerAvailable ? '<span class="ok">available</span>' : '<span class="bad">NOT FOUND</span>'),
+          (msg.runnerAvailable ? '<span class="ok">available</span>' : '<span class="bad">NOT FOUND</span>') +
+          (relayMode ? ' · via relay' : ''),
       );
-      if (lastSeq > 0 && ws && ws.readyState === WebSocket.OPEN)
-        ws.send(JSON.stringify({ type: 'resume', afterSeq: lastSeq }));
+      if (lastSeq > 0) sendToDaemon({ type: 'resume', afterSeq: lastSeq });
       return;
     case 'run-started':
       if (msg.seq <= lastSeq) return;
@@ -96,7 +132,7 @@ form.addEventListener('submit', (e) => {
   e.preventDefault();
   const prompt = promptInput.value.trim();
   if (!prompt || !ws || ws.readyState !== WebSocket.OPEN) return;
-  ws.send(JSON.stringify({ type: 'prompt', prompt }));
+  sendToDaemon({ type: 'prompt', prompt });
   promptInput.value = '';
 });
 
