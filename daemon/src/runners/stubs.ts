@@ -23,21 +23,12 @@ function notImplemented(id: string): RunHandle {
     events: (async function* () {
       yield {
         type: 'error' as const,
-        message: `${id} runner is not implemented yet (POC ships Claude Code only).`,
+        message: `${id} runner is not implemented yet.`,
       };
     })(),
     respond: () => {},
     cancel: () => {},
   };
-}
-
-export class CopilotCliRunner implements AgentRunner {
-  readonly id = 'copilot-cli';
-  readonly name = 'GitHub Copilot CLI';
-  readonly models: string[] = [];
-  readonly supportsApprovals = false;
-  detect = () => commandExists('copilot');
-  start = (_run: RunSpec) => notImplemented(this.id);
 }
 
 export class CodexCliRunner implements AgentRunner {

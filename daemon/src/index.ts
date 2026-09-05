@@ -1,12 +1,8 @@
 import { resolve } from 'node:path';
 import { existsSync } from 'node:fs';
 import { ClaudeCodeRunner } from './runners/claude-code.js';
-import {
-  CopilotCliRunner,
-  CodexCliRunner,
-  CursorAgentRunner,
-  GeminiCliRunner,
-} from './runners/stubs.js';
+import { CodexCliRunner, CursorAgentRunner, GeminiCliRunner } from './runners/stubs.js';
+import { CopilotCliRunner } from './runners/copilot-cli.js';
 import { SessionManager } from './session-manager.js';
 import { Store } from './store.js';
 import { LocalSessionServer } from './local-server.js';
