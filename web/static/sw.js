@@ -1,9 +1,60 @@
-// offhand service worker (M4): approval push notifications with action
-// buttons. Push payloads carry ONLY opaque ids — no prompt/code content ever
-// reaches the push services.
+// offhand service worker: approval push notifications + SPA cache strategy.
+// - navigations: network-first with cached-shell fallback (never a dead app)
+// - hashed immutable assets: cache-first (fast, safe — content-addressed)
+// Push payloads carry ONLY opaque ids — no content reaches push services.
 
-self.addEventListener('install', () => self.skipWaiting());
-self.addEventListener('activate', (e) => e.waitUntil(self.clients.claim()));
+const CACHE = 'offhand-shell-v2';
+
+self.addEventListener('install', (event) => {
+  event.waitUntil(
+    caches.open(CACHE).then((c) => c.addAll(['/'])).then(() => self.skipWaiting()),
+  );
+});
+
+self.addEventListener('activate', (event) => {
+  event.waitUntil(
+    caches
+      .keys()
+      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
+      .then(() => self.clients.claim()),
+  );
+});
+
+self.addEventListener('fetch', (event) => {
+  const req = event.request;
+  if (req.method !== 'GET') return;
+  const url = new URL(req.url);
+  if (url.origin !== location.origin) return;
+
+  // App shell navigations: fresh HTML when online, cached shell when not.
+  if (req.mode === 'navigate') {
+    event.respondWith(
+      fetch(req)
+        .then((res) => {
+          const copy = res.clone();
+          caches.open(CACHE).then((c) => c.put('/', copy)).catch(() => {});
+          return res;
+        })
+        .catch(() => caches.match('/')),
+    );
+    return;
+  }
+
+  // Immutable hashed assets: cache-first.
+  if (url.pathname.startsWith('/_app/immutable/')) {
+    event.respondWith(
+      caches.match(req).then(
+        (hit) =>
+          hit ||
+          fetch(req).then((res) => {
+            const copy = res.clone();
+            caches.open(CACHE).then((c) => c.put(req, copy)).catch(() => {});
+            return res;
+          }),
+      ),
+    );
+  }
+});
 
 self.addEventListener('push', (event) => {
   let data = {};
@@ -16,15 +67,13 @@ self.addEventListener('push', (event) => {
   event.waitUntil(
     self.registration.showNotification('offhand — approval waiting', {
       body: 'Your agent is paused on a permission request.',
-      // Constant tag: repeated approval pushes replace the previous
-      // notification instead of stacking (founder friction 2026-09-05).
       tag: 'offhand-approval',
       renotify: true,
       requireInteraction: true,
       data,
       actions: [
-        { action: 'approve', title: '✔ Approve' },
-        { action: 'deny', title: '✖ Deny' },
+        { action: 'approve', title: 'Approve' },
+        { action: 'deny', title: 'Deny' },
       ],
     }),
   );
@@ -49,7 +98,6 @@ self.addEventListener('notificationclick', (event) => {
     return;
   }
 
-  // Body tap: focus or open the app to review in context.
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
       for (const client of list) {

@@ -10,6 +10,7 @@
   let bootError = $state('');
 
   onMount(() => {
+    if ('serviceWorker' in navigator) void navigator.serviceWorker.register('/sw.js');
     boot().catch((e) => (bootError = e instanceof Error ? e.message : String(e)));
   });
 

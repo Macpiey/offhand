@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>offhand</title>
+    <style>
+      body {
+        margin: 0;
+        background: #1f1e1c;
+        color: #ececea;
+        font: 15px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        display: grid;
+        place-items: center;
+        height: 100dvh;
+        text-align: center;
+      }
+      .box { display: flex; flex-direction: column; align-items: center; gap: 0.6rem; padding: 2rem; }
+      h1 { font: 700 20px/1.2 ui-serif, Georgia, serif; margin: 0; }
+      p { color: #9d9a93; margin: 0; font-size: 14px; }
+      .spin {
+        width: 22px; height: 22px; border-radius: 50%;
+        border: 2.5px solid rgba(240,238,230,0.15); border-top-color: #cc6b4d;
+        animation: r 0.9s linear infinite; margin-bottom: 0.5rem;
+      }
+      @keyframes r { to { transform: rotate(360deg); } }
+    </style>
+  </head>
+  <body>
+    <div class="box">
+      <div class="spin"></div>
+      <h1>Updating offhand…</h1>
+      <p>Loading the latest version of the app.</p>
+    </div>
+    <script>
+      // A boot failure here almost always means a stale cached shell after a
+      // deploy. Reload once with a cache-buster; loop-guard via sessionStorage.
+      (function () {
+        try {
+          if (!sessionStorage.getItem('offhand-recovered')) {
+            sessionStorage.setItem('offhand-recovered', '1');
+            setTimeout(function () {
+              location.replace('/?v=' + Date.now());
+            }, 400);
+          } else {
+            document.querySelector('h1').textContent = 'Something broke';
+            document.querySelector('p').textContent = 'Close the app fully and open it again.';
+            document.querySelector('.spin').style.display = 'none';
+            sessionStorage.removeItem('offhand-recovered');
+          }
+        } catch (e) { /* ignore */ }
+      })();
+    </script>
+  </body>
+</html>
