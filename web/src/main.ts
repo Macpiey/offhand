@@ -22,7 +22,7 @@ function connect(): void {
   ws.onopen = () => {
     retryMs = 500;
     setStatus(`<span class="ok">●</span> connected to daemon`);
-    if (lastSeq > 0) ws!.send(JSON.stringify({ type: 'resume', afterSeq: lastSeq }));
+    ws!.send(JSON.stringify({ type: 'resume', afterSeq: lastSeq }));
   };
 
   ws.onmessage = (e) => {
@@ -49,7 +49,8 @@ function handle(msg: ServerMessage): void {
         `<span class="ok">●</span> ${escapeHtml(msg.workspace)} · runner: ${msg.runner} ` +
           (msg.runnerAvailable ? '<span class="ok">available</span>' : '<span class="bad">NOT FOUND</span>'),
       );
-      if (lastSeq > 0 && ws) ws.send(JSON.stringify({ type: 'resume', afterSeq: lastSeq }));
+      if (lastSeq > 0 && ws && ws.readyState === WebSocket.OPEN)
+        ws.send(JSON.stringify({ type: 'resume', afterSeq: lastSeq }));
       return;
     case 'run-started':
       if (msg.seq <= lastSeq) return;
