@@ -34,19 +34,25 @@
     </div>
     <script>
       // A boot failure here almost always means a stale cached shell after a
-      // deploy. Reload once with a cache-buster; loop-guard via sessionStorage.
+      // deploy. Retry a few times with backoff; loop-guard via sessionStorage.
       (function () {
         try {
-          if (!sessionStorage.getItem('offhand-recovered')) {
-            sessionStorage.setItem('offhand-recovered', '1');
+          var attempts = 0, since = 0;
+          try {
+            var raw = sessionStorage.getItem('offhand-err-recovery');
+            if (raw) { var s = JSON.parse(raw); attempts = s.attempts || 0; since = s.since || 0; }
+          } catch (e) { /* fresh */ }
+          if (Date.now() - since > 90000) { attempts = 0; since = Date.now(); }
+          if (attempts < 3) {
+            sessionStorage.setItem('offhand-err-recovery', JSON.stringify({ attempts: attempts + 1, since: since }));
             setTimeout(function () {
               location.replace('/?v=' + Date.now());
-            }, 400);
+            }, 400 + 1200 * attempts);
           } else {
             document.querySelector('h1').textContent = 'Something broke';
             document.querySelector('p').textContent = 'Close the app fully and open it again.';
             document.querySelector('.spin').style.display = 'none';
-            sessionStorage.removeItem('offhand-recovered');
+            sessionStorage.removeItem('offhand-err-recovery');
           }
         } catch (e) { /* ignore */ }
       })();

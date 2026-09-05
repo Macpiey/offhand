@@ -2,25 +2,43 @@
   import { onMount } from 'svelte';
 
   // In-app boot/navigation failures are almost always a stale cached chunk
-  // after a deploy. Purge caches + SW and reload once (loop-guarded) before
-  // ever showing an error to a human.
+  // after a deploy (there is a ~2 min window where shell and chunks can be
+  // mixed versions). Purge caches + SW and retry a few times with backoff
+  // before ever showing an error to a human.
   let recovering = $state(true);
+
+  const MAX_ATTEMPTS = 3;
+  const RESET_AFTER_MS = 90_000;
 
   onMount(() => {
     void (async () => {
       try {
-        if (!sessionStorage.getItem('offhand-err-recovered')) {
-          sessionStorage.setItem('offhand-err-recovered', '1');
+        let attempts = 0;
+        let since = 0;
+        try {
+          const raw = sessionStorage.getItem('offhand-err-recovery');
+          if (raw) ({ attempts, since } = JSON.parse(raw) as { attempts: number; since: number });
+        } catch {
+          /* corrupt state — treat as fresh */
+        }
+        if (Date.now() - since > RESET_AFTER_MS) {
+          attempts = 0;
+          since = Date.now();
+        }
+        if (attempts < MAX_ATTEMPTS) {
+          sessionStorage.setItem('offhand-err-recovery', JSON.stringify({ attempts: attempts + 1, since }));
           if ('caches' in window) {
             const keys = await caches.keys();
             await Promise.all(keys.map((k) => caches.delete(k)));
           }
           const regs = await navigator.serviceWorker?.getRegistrations?.();
           if (regs) await Promise.all(regs.map((r) => r.update()));
+          // Backoff: give a mid-deploy CDN a moment to settle between tries.
+          await new Promise((r) => setTimeout(r, 1200 * (attempts + 1)));
           location.replace('/?v=' + Date.now());
           return;
         }
-        sessionStorage.removeItem('offhand-err-recovered');
+        sessionStorage.removeItem('offhand-err-recovery');
       } catch {
         /* fall through to manual UI */
       }

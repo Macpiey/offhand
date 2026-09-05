@@ -24,10 +24,22 @@
       const update = () => {
         const kb = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
         document.documentElement.style.setProperty('--kb', `${kb}px`);
+        // iOS leaves the layout viewport scrolled after the keyboard closes,
+        // which floats every position:fixed element ~100pt above the screen
+        // bottom (nav bar / sheets hovering mid-air). Snap it back.
+        if (kb < 2 && (window.scrollY !== 0 || document.documentElement.scrollTop !== 0)) {
+          window.scrollTo(0, 0);
+        }
       };
       vv.addEventListener('resize', update);
       vv.addEventListener('scroll', update);
       update();
+
+      // Belt and braces: keyboard dismissal via blur + app foregrounding.
+      window.addEventListener('focusout', () => setTimeout(update, 80));
+      document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) setTimeout(update, 80);
+      });
     }
   });
 
