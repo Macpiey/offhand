@@ -1,6 +1,7 @@
 <script lang="ts">
   import { sessions, waiting, workspaces, runners } from '$lib/stores.js';
   import { send } from '$lib/client.js';
+  import { portal } from '$lib/portal.js';
   import SessionList from '$lib/components/SessionList.svelte';
   import Icon from '$lib/components/Icon.svelte';
 
@@ -52,7 +53,7 @@
 </div>
 
 {#if showNew}
-  <div class="overlay" onclick={() => (showNew = false)} onkeydown={(e) => e.key === 'Escape' && (showNew = false)} role="presentation">
+  <div class="overlay" use:portal onclick={() => (showNew = false)} onkeydown={(e) => e.key === 'Escape' && (showNew = false)} role="presentation">
     <div class="sheet" onclick={(e) => e.stopPropagation()} role="dialog" aria-label="New session" tabindex="-1" onkeydown={() => {}}>
       <div class="handle"></div>
       <h2>New session</h2>
@@ -96,12 +97,12 @@
 {/if}
 
 <style>
-  .page { padding: 0.4rem 1.25rem 1.5rem; display: flex; flex-direction: column; gap: 1rem; }
+  .page { flex: 1; padding: 0.4rem 1.25rem 1rem; display: flex; flex-direction: column; gap: 1rem; }
   .hero { margin-top: 0.3rem; }
   h1 { font: 700 26px/1.2 var(--serif); letter-spacing: -0.02em; margin: 0; }
   .status { color: var(--mute); margin: 0.2rem 0 0; font-size: 15px; }
   .status.hot { color: var(--warn); font-weight: 600; }
-  .new { align-self: center; margin-top: 0.4rem; padding: 0 1.5rem; height: 44px; }
+  .new { margin-top: auto; align-self: stretch; height: 50px; font-size: 15px; border-radius: 14px; }
 
   .overlay {
     position: fixed;

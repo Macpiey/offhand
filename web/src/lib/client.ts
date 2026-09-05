@@ -120,8 +120,8 @@ export async function pairWithCode(code: string, relayOverride?: string): Promis
     daemonPublicKey: toB64u(daemonPublicKey),
   };
   localStorage.setItem(PAIRING_KEY, JSON.stringify(pairing));
+  justPaired.set(true); // set BEFORE the phase flips so the ritual covers the app frame (no flash)
   await setupFromPairing(pairing);
-  justPaired.set(true); // trigger the verify-fingerprint ritual
   connect();
 }
 

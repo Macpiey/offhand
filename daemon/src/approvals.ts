@@ -36,7 +36,8 @@ export class ApprovalBroker {
       return Promise.resolve({ approve: false, message: 'no active session to ask' });
     }
     const risk = classifyRisk(toolName, input);
-    if (this.policyProvider() === 'trusting' && risk === 'low') {
+    // AskUserQuestion is literally a question for the human — never auto-answer.
+    if (this.policyProvider() === 'trusting' && risk === 'low' && toolName !== 'AskUserQuestion') {
       // Trusting workspaces: low-risk actions sail through; high-risk still asks.
       this.listener({
         type: 'tool',
@@ -95,16 +96,44 @@ export function classifyRisk(toolName: string, input: unknown): 'low' | 'high' {
 export function summariseInput(input: unknown): string {
   if (typeof input !== 'object' || input === null) return String(input ?? '');
   const i = input as Record<string, unknown>;
+  const q = firstQuestion(i);
+  if (q) return truncate(q.question, 200);
   for (const key of ['command', 'file_path', 'path', 'url', 'pattern', 'description']) {
     if (typeof i[key] === 'string' && i[key] !== '') return truncate(`${key}: ${i[key] as string}`, 200);
   }
   return truncate(JSON.stringify(input), 200);
 }
 
+interface AskQuestion {
+  question: string;
+  options: { label: string; description?: string }[];
+}
+
+/** Extract the first question from AskUserQuestion-style input, if present. */
+function firstQuestion(i: Record<string, unknown>): AskQuestion | undefined {
+  if (!Array.isArray(i.questions) || i.questions.length === 0) return undefined;
+  const q = i.questions[0] as Record<string, unknown>;
+  if (typeof q?.question !== 'string') return undefined;
+  const options = Array.isArray(q.options)
+    ? (q.options as Record<string, unknown>[])
+        .filter((o) => typeof o?.label === 'string')
+        .map((o) => ({
+          label: o.label as string,
+          ...(typeof o.description === 'string' ? { description: o.description } : {}),
+        }))
+    : [];
+  return { question: q.question, options };
+}
+
 /** Content preview for the approval sheet: what will actually change/run. */
 export function buildPreview(toolName: string, input: unknown): string | undefined {
   if (typeof input !== 'object' || input === null) return undefined;
   const i = input as Record<string, unknown>;
+  const q = firstQuestion(i);
+  if (q) {
+    const lines = [q.question, ...q.options.map((o, n) => `${n + 1}. ${o.label}${o.description ? ` — ${o.description}` : ''}`)];
+    return truncate(lines.join('\n'), 600);
+  }
   if (/^(Edit|MultiEdit)/.test(toolName) && typeof i.new_string === 'string') {
     const oldS = typeof i.old_string === 'string' ? i.old_string : '';
     const lines = [

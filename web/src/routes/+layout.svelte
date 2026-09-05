@@ -71,13 +71,15 @@
     </aside>
 
     <div class="frame">
-      <header>
-        <span class="brand">offhand</span>
-        <span class="conn" class:off={$conn.phase !== 'connected' || !$conn.daemonOnline}>
-          <span class="dot"></span>
-          {$conn.phase !== 'connected' ? 'Connecting' : !$conn.daemonOnline ? 'Offline' : ($conn.host?.hostname ?? 'Connected')}
-        </span>
-      </header>
+      {#if $page.url.pathname !== '/session'}
+        <header>
+          <span class="brand">offhand</span>
+          <span class="conn" class:off={$conn.phase !== 'connected' || !$conn.daemonOnline}>
+            <span class="dot"></span>
+            {$conn.phase !== 'connected' ? 'Connecting' : !$conn.daemonOnline ? 'Offline' : ($conn.host?.hostname ?? 'Connected')}
+          </span>
+        </header>
+      {/if}
 
       {#if $conn.phase === 'connected' && !$conn.daemonOnline}
         <div class="offline-note">
@@ -107,17 +109,19 @@
 
 <style>
   :global(:root) {
-    --bg: #1a1915;
-    --card: #242320;
-    --raised: #2e2c28;
-    --hairline: rgba(237, 235, 230, 0.08);
-    --hairline-2: rgba(237, 235, 230, 0.14);
+    --bg: #131210;
+    --card: #1f1e1a;
+    --raised: #2a2824;
+    --hairline: rgba(240, 238, 230, 0.09);
+    --hairline-2: rgba(240, 238, 230, 0.16);
     --ink: #edebe6;
     --mute: #a29e96;
     --ghost: #6e6b64;
     --brand: #d97757;
     --brand-down: #c4663f;
-    --brand-soft: rgba(217, 119, 87, 0.13);
+    --brand-soft: rgba(217, 119, 87, 0.14);
+    --bubble: #ece7dd;
+    --bubble-ink: #201f1b;
     --ok: #7fb47a;
     --ok-soft: rgba(127, 180, 122, 0.11);
     --warn: #d9a13f;
@@ -243,26 +247,31 @@
     flex-direction: column;
   }
   nav {
-    display: flex;
+    align-self: center;
     flex-shrink: 0;
-    padding: 0.3rem 1.25rem var(--inset-b);
-    border-top: 1px solid var(--hairline);
-    background: color-mix(in srgb, var(--bg) 94%, black);
+    display: flex;
+    gap: 2px;
+    margin: 0.45rem auto calc(var(--inset-b) + 0.3rem);
+    padding: 4px;
+    background: var(--raised);
+    border: 1px solid var(--hairline);
+    border-radius: 999px;
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.4);
   }
   nav a {
-    flex: 1;
     display: flex;
-    flex-direction: column;
     align-items: center;
-    gap: 3px;
-    padding: 0.5rem 0 0.3rem;
+    gap: 6px;
+    padding: 0.5rem 0.95rem;
+    border-radius: 999px;
     color: var(--ghost);
     text-decoration: none;
-    transition: color 0.15s ease;
+    transition: background 0.15s ease, color 0.15s ease;
   }
-  nav a.active { color: var(--ink); }
+  nav a.active { background: var(--brand-soft); color: var(--brand); }
+  .tab-label { display: none; font-size: 13px; font-weight: 600; }
+  nav a.active .tab-label { display: inline; }
   .icon-wrap { position: relative; display: grid; place-items: center; height: 22px; }
-  .tab-label { font-size: 10.5px; font-weight: 600; }
   .badge {
     position: absolute;
     top: -4px;

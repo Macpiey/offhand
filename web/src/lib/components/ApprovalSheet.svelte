@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { TranscriptItem } from '$lib/stores.js';
   import { answerApproval } from '$lib/client.js';
+  import { portal } from '$lib/portal.js';
   import Icon from './Icon.svelte';
 
   let {
@@ -12,6 +13,7 @@
   } = $props();
 
   const high = $derived(approval.risk === 'high');
+  const isQuestion = $derived(approval.action === 'AskUserQuestion');
 
   // High-risk: hold-to-approve (800ms) — deliberate friction.
   let holding = $state(false);
@@ -48,28 +50,29 @@
   }
 </script>
 
-<div class="scrim"></div>
-<div class="sheet" class:high role="dialog" aria-label="Approval required">
+<div use:portal>
+  <div class="scrim"></div>
+  <div class="sheet" class:high role="dialog" aria-label="Approval required">
   <div class="handle"></div>
   <div class="head">
-    <span class="tile" class:high><Icon name={high ? 'alert' : 'lock'} size={17} /></span>
+    <span class="tile" class:high class:q={isQuestion}><Icon name={isQuestion ? 'chat' : high ? 'alert' : 'lock'} size={17} /></span>
     <div class="copy">
-      <div class="title">{high ? 'High-risk action' : 'Permission needed'}</div>
-      <div class="action">{approval.action}</div>
+      <div class="title">{isQuestion ? 'Your agent has a question' : high ? 'High-risk action' : 'Permission needed'}</div>
+      <div class="action">{isQuestion ? 'It will list the choices in chat' : approval.action}</div>
     </div>
   </div>
-  <div class="detail">{approval.detail}</div>
+  {#if !isQuestion}<div class="detail">{approval.detail}</div>{/if}
 
   {#if approval.preview}
-    <pre class="preview">{#each approval.preview.split('\n') as line, i (i)}<span
-          class:add={line.startsWith('+')}
-          class:del={line.startsWith('-')}
-          class:cmd={line.startsWith('$')}>{line}
+    <pre class="preview" class:qa={isQuestion}>{#each approval.preview.split('\n') as line, i (i)}<span
+          class:add={!isQuestion && line.startsWith('+')}
+          class:del={!isQuestion && line.startsWith('-')}
+          class:cmd={!isQuestion && line.startsWith('$')}>{line}
 </span>{/each}</pre>
   {/if}
 
   <div class="actions">
-    <button class="deny" onclick={() => answerApproval(sessionId, approval.approvalId, false)}>Deny</button>
+    <button class="deny" onclick={() => answerApproval(sessionId, approval.approvalId, false)}>{isQuestion ? 'Dismiss' : 'Deny'}</button>
     {#if high}
       <button
         class="approve hold"
@@ -82,8 +85,9 @@
         <span class="lbl">{holding ? 'Keep holding…' : 'Hold to approve'}</span>
       </button>
     {:else}
-      <button class="approve" onclick={approveTap}>Approve</button>
+      <button class="approve" onclick={approveTap}>{isQuestion ? 'Ask me in chat' : 'Approve'}</button>
     {/if}
+  </div>
   </div>
 </div>
 
@@ -129,6 +133,7 @@
     flex-shrink: 0;
   }
   .tile.high { background: var(--risk-soft); color: var(--risk); }
+  .tile.q { background: var(--brand-soft); color: var(--brand); }
   .title { font-weight: 700; font-size: 16px; }
   .action { color: var(--mute); font-size: 12.5px; margin-top: 1px; }
   .detail {
@@ -152,6 +157,8 @@
   .preview .add { color: var(--ok); }
   .preview .del { color: var(--risk); }
   .preview .cmd { color: var(--warn); }
+  .preview.qa { font: 400 13.5px/1.6 var(--font); word-break: normal; color: var(--ink); }
+  .preview.qa span { word-break: normal; }
   .actions { display: flex; gap: 0.6rem; }
   .deny {
     flex: 1;

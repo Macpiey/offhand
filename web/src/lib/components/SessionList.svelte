@@ -71,6 +71,15 @@
       return wa - wb || b.createdAtMs - a.createdAtMs;
     }),
   );
+
+  const AVATARS: Record<string, { bg: string; fg: string; ch: string }> = {
+    'claude-code': { bg: 'rgba(217,119,87,0.18)', fg: '#d97757', ch: 'C' },
+    'copilot-cli': { bg: 'rgba(122,162,247,0.16)', fg: '#7aa2f7', ch: 'G' },
+    'codex-cli': { bg: 'rgba(158,206,106,0.15)', fg: '#9ece6a', ch: 'O' },
+    'cursor-agent': { bg: 'rgba(187,154,247,0.16)', fg: '#bb9af7', ch: 'U' },
+    'gemini-cli': { bg: 'rgba(115,218,202,0.15)', fg: '#73daca', ch: 'G' },
+  };
+  const avatar = (runnerId: string) => AVATARS[runnerId] ?? { bg: 'var(--raised)', fg: 'var(--mute)', ch: runnerId.charAt(0).toUpperCase() };
 </script>
 
 <div class="list">
@@ -88,14 +97,19 @@
       role="button"
       tabindex="0"
     >
-      <div class="top">
-        <span class="label">{s.label}</span>
-        <span class="when">{timeAgo(s.createdAtMs)}</span>
-      </div>
-      <div class="sub {sub.cls}">
-        {#if s.busy && !$waiting.has(s.id)}<span class="pulse"></span>{:else}<Icon name={sub.icon} size={12} />{/if}
-        <span class="sub-text">{sub.text}</span>
-        <span class="agent">{$runners.find((r) => r.id === s.runnerId)?.name ?? s.runnerId}</span>
+      <div class="row">
+        <span class="avatar" style="background:{avatar(s.runnerId).bg};color:{avatar(s.runnerId).fg}">{avatar(s.runnerId).ch}</span>
+        <div class="body">
+          <div class="top">
+            <span class="label">{s.label}</span>
+            <span class="when">{timeAgo(s.createdAtMs)}</span>
+          </div>
+          <div class="sub {sub.cls}">
+            {#if s.busy && !$waiting.has(s.id)}<span class="pulse"></span>{:else}<Icon name={sub.icon} size={12} />{/if}
+            <span class="sub-text">{sub.text}</span>
+            <span class="agent">{$runners.find((r) => r.id === s.runnerId)?.name ?? s.runnerId}</span>
+          </div>
+        </div>
       </div>
     </div>
   {:else}
@@ -120,6 +134,17 @@
   .card:hover { background: var(--raised); }
   .card.attention { border-color: color-mix(in srgb, var(--warn) 45%, transparent); background: color-mix(in srgb, var(--warn-soft) 55%, var(--card)); }
   .card.current { border-color: var(--hairline-2); background: var(--raised); }
+  .row { display: flex; align-items: center; gap: 0.8rem; }
+  .avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 12px;
+    display: grid;
+    place-items: center;
+    font: 700 16px/1 var(--serif);
+    flex-shrink: 0;
+  }
+  .body { flex: 1; min-width: 0; }
   .top { display: flex; align-items: baseline; justify-content: space-between; gap: 0.6rem; }
   .label { font-weight: 600; font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .when { color: var(--ghost); font-size: 11.5px; flex-shrink: 0; font-variant-numeric: tabular-nums; }

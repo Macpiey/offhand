@@ -1,6 +1,6 @@
 <script lang="ts">
   import { tick } from 'svelte';
-  import { sessions, transcripts, currentSessionId, runners, workspaces, type TranscriptItem } from '$lib/stores.js';
+  import { sessions, transcripts, currentSessionId, runners, workspaces, conn, type TranscriptItem } from '$lib/stores.js';
   import { send, ensureHistory } from '$lib/client.js';
   import { renderMarkdown } from '$lib/markdown.js';
   import ReceiptCard from '$lib/components/ReceiptCard.svelte';
@@ -109,6 +109,7 @@
       </button>
     </div>
     <div class="ctx-meta">
+      <span class="status-dot" class:off={$conn.phase !== 'connected' || !$conn.daemonOnline}></span>
       <span>{runner?.name ?? session.runnerId}{session.model ? ` · ${session.model}` : ''}</span>
       {#if workspace?.gitBranch}<span class="sep">·</span><span class="mono">{workspace.gitBranch}</span>{/if}
       {#if workspace}<span class="sep">·</span><span class="cap">{workspace.policy}</span>{/if}
@@ -183,6 +184,10 @@
   .s { color: var(--mute); margin: 0; font-size: 13px; }
 
   .context { position: relative; padding: 0 1.25rem 0.5rem; flex-shrink: 0; }
+  /* On phones the context bar IS the header — reclaim the brand row's space. */
+  @media (max-width: 699.9px) {
+    .context { padding-top: calc(var(--inset-t) + 0.35rem); }
+  }
   .ctx-row { display: flex; align-items: center; gap: 0.5rem; }
   .select-wrap { display: flex; align-items: center; gap: 0.25rem; flex: 1; min-width: 0; color: var(--ghost); }
   .select-wrap select {
@@ -216,6 +221,8 @@
     overflow: hidden;
   }
   .sep { opacity: 0.5; }
+  .status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); flex-shrink: 0; }
+  .status-dot.off { background: var(--warn); }
   .mono { font-family: var(--mono); font-size: 11px; }
   .cap { text-transform: capitalize; }
   .warn { color: var(--warn); font-weight: 600; }
@@ -275,14 +282,15 @@
   .bubble {
     align-self: flex-end;
     max-width: 84%;
-    background: var(--raised);
-    border: 1px solid var(--hairline);
+    background: var(--bubble);
+    color: var(--bubble-ink);
     border-radius: 18px 18px 6px 18px;
     padding: 0.6rem 0.95rem;
     white-space: pre-wrap;
     word-break: break-word;
     margin-top: 0.55rem;
     font-size: 14.5px;
+    font-weight: 500;
   }
   .agent { max-width: 94%; font-size: 15px; line-height: 1.6; word-break: break-word; }
   .agent.dim { color: var(--mute); }

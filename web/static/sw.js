@@ -3,7 +3,7 @@
 // - hashed immutable assets: cache-first (fast, safe — content-addressed)
 // Push payloads carry ONLY opaque ids — no content reaches push services.
 
-const CACHE = 'offhand-shell-v2';
+const CACHE = 'offhand-shell-v3';
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -40,15 +40,20 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Immutable hashed assets: cache-first.
+  // Immutable hashed assets: cache-first. NEVER cache an HTML response here —
+  // after a deploy the SPA rewrite answers missing old chunks with index.html
+  // (status 200), and caching that as a "chunk" bricks the app until reinstall.
   if (url.pathname.startsWith('/_app/immutable/')) {
     event.respondWith(
       caches.match(req).then(
         (hit) =>
           hit ||
           fetch(req).then((res) => {
-            const copy = res.clone();
-            caches.open(CACHE).then((c) => c.put(req, copy)).catch(() => {});
+            const type = res.headers.get('content-type') || '';
+            if (res.ok && !type.includes('text/html')) {
+              const copy = res.clone();
+              caches.open(CACHE).then((c) => c.put(req, copy)).catch(() => {});
+            }
             return res;
           }),
       ),
