@@ -4,6 +4,6 @@ services:
     name: offhand-relay
     runtime: node
     plan: free
-    buildCommand: corepack enable && pnpm install --frozen-lockfile
+    buildCommand: pnpm install --frozen-lockfile
     startCommand: pnpm --filter @offhand/relay start
     healthCheckPath: /healthz
