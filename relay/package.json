@@ -13,6 +13,7 @@
     "@offhand/shared": "workspace:*",
     "fastify": "^5.0.0",
     "@fastify/websocket": "^11.0.0",
+    "ws": "^8.18.0",
     "zod": "^3.25.0"
   },
   "devDependencies": {

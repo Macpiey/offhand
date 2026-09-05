@@ -7,6 +7,9 @@ packages:
 allowBuilds:
   esbuild: true
 
+patchedDependencies:
+  libsodium-wrappers@0.7.16: patches/libsodium-wrappers@0.7.16.patch
+
 # Per-project Node pin lives in package.json "devEngines.runtime" (pnpm 11+):
 # pnpm auto-downloads Node 22 for this repo's scripts, leaving the machine's
 # global nvm/Node untouched.

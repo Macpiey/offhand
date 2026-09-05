@@ -4,6 +4,9 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+patchedDependencies:
+  libsodium-wrappers@0.7.16: 076ff90c7dfb91c474b4364e1cb9dd6a5eaecdc429f96a2eb36361e8fa2a2924
+
 importers:
 
   .:
@@ -51,6 +54,9 @@ importers:
       fastify:
         specifier: ^5.0.0
         version: 5.12.1
+      ws:
+        specifier: ^8.18.0
+        version: 8.21.3
       zod:
         specifier: ^3.25.0
         version: 3.25.76
@@ -73,10 +79,16 @@ importers:
 
   shared:
     dependencies:
+      libsodium-wrappers:
+        specifier: ^0.7.15
+        version: 0.7.16(patch_hash=076ff90c7dfb91c474b4364e1cb9dd6a5eaecdc429f96a2eb36361e8fa2a2924)
       zod:
         specifier: ^3.25.0
         version: 3.25.76
     devDependencies:
+      '@types/libsodium-wrappers':
+        specifier: ^0.7.14
+        version: 0.7.14
       typescript:
         specifier: ^5.6.0
         version: 5.9.3
@@ -592,6 +604,9 @@ packages:
   '@types/estree@1.0.9':
     resolution: {integrity: sha512-GhdPgy1el4/ImP05X05Uw4cw2/M93BCUmnEvWZNStlCzEKME4Fkk+YpoA5OiHNQmoS7Cafb8Xa3Pya8m1Qrzeg==}
 
+  '@types/libsodium-wrappers@0.7.14':
+    resolution: {integrity: sha512-5Kv68fXuXK0iDuUir1WPGw2R9fOZUlYlSAa0ztMcL0s0BfIDTqg9GXz8K30VJpPP3sxWhbolnQma2x+/TfkzDQ==}
+
   '@types/node@22.20.1':
     resolution: {integrity: sha512-EANqOCF9QFyra+4pfxUcX9STKJpCLjMbObVzljIJomAWSnuSIEAvyzEU53GaajbXJEgdh0iEcPL+DGvpUd4k1Q==}
 
@@ -771,6 +786,12 @@ packages:
 
   json-schema-traverse@1.0.0:
     resolution: {integrity: sha512-NM8/P9n3XjXhIZn1lLhkFaACTOURQXjWhV4BA/RnOv8xvgqtqpAX9IO4mRQxSx1Rlo4tqzeqb0sOlruaOy3dug==}
+
+  libsodium-wrappers@0.7.16:
+    resolution: {integrity: sha512-Gtr/WBx4dKjvRL1pvfwZqu7gO6AfrQ0u9vFL+kXihtHf6NfkROR8pjYWn98MFDI3jN19Ii1ZUfPR9afGiPyfHg==}
+
+  libsodium@0.7.16:
+    resolution: {integrity: sha512-3HrzSPuzm6Yt9aTYCDxYEG8x8/6C0+ag655Y7rhhWZM9PT4NpdnbqlzXhGZlDnkgR6MeSTnOt/VIyHLs9aSf+Q==}
 
   light-my-request@6.6.0:
     resolution: {integrity: sha512-CHYbu8RtboSIoVsHZ6Ye4cj4Aw/yg2oAFimlF7mNvfDV192LR7nDiKtSIfCuLT7KokPSTn/9kfVLm5OGN0A28A==}
@@ -1480,6 +1501,8 @@ snapshots:
 
   '@types/estree@1.0.9': {}
 
+  '@types/libsodium-wrappers@0.7.14': {}
+
   '@types/node@22.20.1':
     dependencies:
       undici-types: 6.21.0
@@ -1720,6 +1743,12 @@ snapshots:
       dequal: 2.0.3
 
   json-schema-traverse@1.0.0: {}
+
+  libsodium-wrappers@0.7.16(patch_hash=076ff90c7dfb91c474b4364e1cb9dd6a5eaecdc429f96a2eb36361e8fa2a2924):
+    dependencies:
+      libsodium: 0.7.16
+
+  libsodium@0.7.16: {}
 
   light-my-request@6.6.0:
     dependencies:

@@ -2,8 +2,12 @@ import WebSocket from 'ws';
 import {
   parseRelayFrame,
   parseClientMessage,
+  seal,
+  open,
+  EnvelopeSchema,
   type RelayFrame,
   type ServerMessage,
+  type SessionKeys,
 } from '@offhand/shared';
 import type { SessionCore } from './session-core.js';
 
@@ -11,10 +15,11 @@ const HEARTBEAT_MS = 30_000; // POC risk #3: free-tier WS idle timeouts
 const MAX_BACKOFF_MS = 30_000;
 
 /**
- * M2 transport: outbound-only WSS to the relay (never an inbound port —
- * key architecture property). Wraps ServerMessages in `peer` frames and
- * unwraps incoming `peer` frames into ClientMessages. Reconnects forever
- * with exponential backoff; the phone replays via `resume` after gaps.
+ * M2/M3 transport: outbound-only WSS to the relay (never an inbound port —
+ * key architecture property). Every peer payload is an E2E-encrypted
+ * envelope (M3): seal with our tx key, open with our rx key. The relay
+ * forwards ciphertext it cannot read. Reconnects forever with exponential
+ * backoff; the phone replays via `resume` after gaps.
  */
 export class RelayClient {
   private ws: WebSocket | null = null;
@@ -27,6 +32,7 @@ export class RelayClient {
     private readonly core: SessionCore,
     private readonly relayUrl: string,
     private readonly sessionId: string,
+    private readonly keys: SessionKeys,
   ) {}
 
   start(): void {
@@ -51,7 +57,8 @@ export class RelayClient {
 
     const send = (msg: ServerMessage) => {
       if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ kind: 'peer', payload: msg } satisfies RelayFrame));
+        const envelope = seal(msg, this.keys.tx);
+        ws.send(JSON.stringify({ kind: 'peer', payload: envelope } satisfies RelayFrame));
       }
     };
 
@@ -76,9 +83,12 @@ export class RelayClient {
       }
       if (frame.kind !== 'peer') return; // pong/presence need no action here
       try {
-        this.core.handle(parseClientMessage(JSON.stringify(frame.payload)), send);
+        const envelope = EnvelopeSchema.parse(frame.payload);
+        const decrypted = open(envelope, this.keys.rx);
+        this.core.handle(parseClientMessage(JSON.stringify(decrypted)), send);
       } catch {
-        // Malformed peer payload is dropped, never fatal.
+        // Undecryptable or malformed peer payload is dropped, never fatal —
+        // wrong-key traffic (stale phone, attacker) simply goes nowhere.
       }
     });
 

@@ -1,19 +1,20 @@
 import { resolve } from 'node:path';
 import { existsSync } from 'node:fs';
-import { randomBytes } from 'node:crypto';
 import { ClaudeCodeRunner } from './runners/claude-code.js';
 import { CopilotCliRunner, CodexCliRunner } from './runners/stubs.js';
 import { SessionCore } from './session-core.js';
 import { LocalSessionServer } from './local-server.js';
 import { RelayClient } from './relay-client.js';
+import { ensurePairing } from './pairing.js';
 
 /**
  * offhand daemon entry point.
  *   pnpm daemon -- --workspace <path> [--port 4317]
- *                  [--relay <url> [--session <id>]]
+ *                  [--relay <url>] [--repair]
  *
- * M2 session ids are shared secrets typed into the phone client; real pairing
- * (QR + key exchange) replaces this in M3.
+ * Relay mode (M3): pairing = X25519 key exchange; every payload E2E
+ * encrypted; the session id is derived from the daemon's public key.
+ * `--repair` discards the stored pairing and prints a fresh pairing code.
  */
 const args = process.argv.slice(2);
 function argValue(flag: string): string | undefined {
@@ -24,7 +25,7 @@ function argValue(flag: string): string | undefined {
 const workspace = resolve(argValue('--workspace') ?? process.cwd());
 const port = Number(argValue('--port') ?? 4317);
 const relayUrl = argValue('--relay');
-const sessionId = argValue('--session') ?? randomBytes(9).toString('base64url');
+const forceRepair = args.includes('--repair');
 
 if (!existsSync(workspace)) {
   console.error(`workspace does not exist: ${workspace}`);
@@ -48,7 +49,9 @@ new LocalSessionServer(core, port);
 console.log(`  local     : ws://127.0.0.1:${port}`);
 
 if (relayUrl) {
-  new RelayClient(core, relayUrl, sessionId).start();
+  const pairing = await ensurePairing(relayUrl, forceRepair);
+  new RelayClient(core, relayUrl, pairing.sessionId, pairing.keys).start();
   console.log(`  relay     : ${relayUrl}`);
-  console.log(`  session   : ${sessionId}  (enter this in the phone client)`);
+  console.log(`  session   : ${pairing.sessionId}`);
+  console.log(`  E2E SAS   : ${pairing.sas}  (must match the phone)`);
 }

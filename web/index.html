@@ -14,7 +14,9 @@
       #transcript { flex: 1; overflow-y: auto; white-space: pre-wrap; word-break: break-word; }
       .tool { color: #d29922; } .done { color: #3fb950; } .err { color: #f85149; }
       .run { color: #58a6ff; margin-top: .75rem; }
-      form { display: flex; gap: .5rem; padding-top: .75rem; }
+      form, #pair-form { display: flex; gap: .5rem; padding-top: .75rem; }
+      #pairing { border: 1px solid #30363d; border-radius: 6px; padding: 0 1rem 1rem; margin-bottom: 1rem; }
+      #pairing input { min-width: 0; }
       input { flex: 1; background: #161b22; color: inherit; border: 1px solid #30363d;
               border-radius: 6px; padding: .5rem .75rem; font: inherit; }
       button { background: #238636; color: #fff; border: 0; border-radius: 6px;
@@ -24,6 +26,16 @@
   </head>
   <body>
     <div id="status">connecting…</div>
+    <div id="pairing" style="display:none">
+      <h3>Pair with your daemon</h3>
+      <p>Start the daemon with <code>--relay</code> and paste the pairing code it prints:</p>
+      <form id="pair-form">
+        <input id="pair-relay" placeholder="Relay URL (e.g. https://offhand-relay.onrender.com)" autocomplete="off" />
+        <input id="pair-code" placeholder="Pairing code (123456.xxxxx…)" autocomplete="off" />
+        <button type="submit">Pair</button>
+      </form>
+      <p id="pair-error" class="err"></p>
+    </div>
     <div id="transcript"></div>
     <form id="form">
       <input id="prompt" placeholder="Prompt the agent…" autocomplete="off" />

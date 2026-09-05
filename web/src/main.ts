@@ -1,46 +1,89 @@
 import {
+  ready,
+  generateKeyPair,
+  derivePhoneKeys,
+  decodePairingCode,
+  sessionIdFromDaemonKey,
+  fingerprint,
+  seal,
+  open,
+  toB64u,
+  fromB64u,
+  EnvelopeSchema,
   parseServerMessage,
   parseRelayFrame,
   type ClientMessage,
   type ServerMessage,
+  type SessionKeys,
 } from '@offhand/shared';
 
 /**
- * Bare transcript page. Two transports:
- *  - local (default): straight to the daemon's localhost WS (M1)
- *  - relay: ?relay=<url>&session=<id> — peer frames through the cloud (M2)
+ * Bare transcript page (M1–M3). Modes:
+ *  - relay (default once paired): E2E-encrypted envelopes through the relay.
+ *    Pairing state (our keypair + daemon public key) lives in localStorage.
+ *  - local (?local=1): plaintext to the daemon's localhost WS, for debugging.
  * Reconnects with backoff and resumes by sequence number — no gaps.
  */
-const params = new URLSearchParams(location.search);
-const relayUrl = params.get('relay');
-const sessionId = params.get('session');
-const relayMode = Boolean(relayUrl && sessionId);
-const WS_URL = relayMode
-  ? `${relayUrl!.replace(/^http/, 'ws').replace(/\/$/, '')}/ws?session=${encodeURIComponent(sessionId!)}&role=phone`
-  : 'ws://127.0.0.1:4317';
+
+interface StoredPairing {
+  relayUrl: string;
+  phonePublicKey: string;
+  phoneSecretKey: string;
+  daemonPublicKey: string;
+}
+
+const PAIRING_KEY = 'offhand.pairing';
+const localMode = new URLSearchParams(location.search).has('local');
 
 const statusEl = document.getElementById('status')!;
 const transcriptEl = document.getElementById('transcript')!;
+const pairingEl = document.getElementById('pairing')!;
+const pairForm = document.getElementById('pair-form') as HTMLFormElement;
+const pairRelayInput = document.getElementById('pair-relay') as HTMLInputElement;
+const pairCodeInput = document.getElementById('pair-code') as HTMLInputElement;
+const pairErrorEl = document.getElementById('pair-error')!;
 const form = document.getElementById('form') as HTMLFormElement;
 const promptInput = document.getElementById('prompt') as HTMLInputElement;
 
 let ws: WebSocket | null = null;
+let keys: SessionKeys | null = null;
+let wsUrl = 'ws://127.0.0.1:4317';
+let sas = '';
 let lastSeq = 0;
 let retryMs = 500;
 let textSpan: HTMLElement | null = null; // current streaming text node
-let presenceNote = ''; // relay-reported daemon state (honest, always shown)
+
+function loadPairing(): StoredPairing | null {
+  const raw = localStorage.getItem(PAIRING_KEY);
+  return raw ? (JSON.parse(raw) as StoredPairing) : null;
+}
+
+async function setupFromPairing(p: StoredPairing): Promise<void> {
+  await ready;
+  const phone = { publicKey: fromB64u(p.phonePublicKey), secretKey: fromB64u(p.phoneSecretKey) };
+  const daemonPk = fromB64u(p.daemonPublicKey);
+  keys = derivePhoneKeys(phone, daemonPk);
+  sas = fingerprint(daemonPk, phone.publicKey);
+  const session = sessionIdFromDaemonKey(daemonPk);
+  const base = p.relayUrl.replace(/^http/, 'ws').replace(/\/$/, '');
+  wsUrl = `${base}/ws?session=${encodeURIComponent(session)}&role=phone`;
+}
 
 function sendToDaemon(msg: ClientMessage): void {
   if (!ws || ws.readyState !== WebSocket.OPEN) return;
-  ws.send(JSON.stringify(relayMode ? { kind: 'peer', payload: msg } : msg));
+  if (keys) {
+    ws.send(JSON.stringify({ kind: 'peer', payload: seal(msg, keys.tx) }));
+  } else {
+    ws.send(JSON.stringify(msg)); // local plaintext mode
+  }
 }
 
 function connect(): void {
-  ws = new WebSocket(WS_URL);
+  ws = new WebSocket(wsUrl);
 
   ws.onopen = () => {
     retryMs = 500;
-    setStatus(`<span class="ok">●</span> connected ${relayMode ? 'via relay' : 'to daemon'}`);
+    setStatus(`<span class="ok">●</span> connected ${keys ? `· E2E 🔒 ${sas}` : 'to daemon (local)'}`);
     sendToDaemon({ type: 'resume', afterSeq: lastSeq });
   };
 
@@ -48,25 +91,26 @@ function connect(): void {
     const raw = String(e.data);
     let msg: ServerMessage;
     try {
-      if (relayMode) {
+      if (keys) {
         const frame = parseRelayFrame(raw);
         if (frame.kind === 'presence') {
-          presenceNote = frame.daemonOnline
+          const note = frame.daemonOnline
             ? ''
             : ` · <span class="bad">daemon offline</span>${
                 frame.lastSeenMs ? ` (last seen ${new Date(frame.lastSeenMs).toLocaleTimeString()})` : ''
               }`;
-          setStatus(`<span class="ok">●</span> connected via relay${presenceNote}`);
+          setStatus(`<span class="ok">●</span> connected · E2E 🔒 ${sas}${note}`);
           if (frame.daemonOnline) sendToDaemon({ type: 'resume', afterSeq: lastSeq });
           return;
         }
         if (frame.kind !== 'peer') return;
-        msg = parseServerMessage(JSON.stringify(frame.payload));
+        const decrypted = open(EnvelopeSchema.parse(frame.payload), keys.rx);
+        msg = parseServerMessage(JSON.stringify(decrypted));
       } else {
         msg = parseServerMessage(raw);
       }
     } catch {
-      return;
+      return; // undecryptable or malformed — dropped, never fatal
     }
     handle(msg);
   };
@@ -84,7 +128,7 @@ function handle(msg: ServerMessage): void {
       setStatus(
         `<span class="ok">●</span> ${escapeHtml(msg.workspace)} · runner: ${msg.runner} ` +
           (msg.runnerAvailable ? '<span class="ok">available</span>' : '<span class="bad">NOT FOUND</span>') +
-          (relayMode ? ' · via relay' : ''),
+          (keys ? ` · E2E 🔒 ${sas}` : ''),
       );
       if (lastSeq > 0) sendToDaemon({ type: 'resume', afterSeq: lastSeq });
       return;
@@ -128,6 +172,39 @@ function handle(msg: ServerMessage): void {
   }
 }
 
+// ---- pairing UI -----------------------------------------------------------
+
+pairForm.addEventListener('submit', (e) => {
+  e.preventDefault();
+  void (async () => {
+    pairErrorEl.textContent = '';
+    try {
+      await ready;
+      const relayUrl = pairRelayInput.value.trim().replace(/\/$/, '');
+      const { token, daemonPublicKey } = decodePairingCode(pairCodeInput.value.trim());
+      const phone = generateKeyPair();
+      const res = await fetch(`${relayUrl}/pair/${encodeURIComponent(token)}/answer`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ phonePublicKey: toB64u(phone.publicKey) }),
+      });
+      if (!res.ok) throw new Error(`relay said ${res.status} — is the daemon waiting to pair?`);
+      const pairing: StoredPairing = {
+        relayUrl,
+        phonePublicKey: toB64u(phone.publicKey),
+        phoneSecretKey: toB64u(phone.secretKey),
+        daemonPublicKey: toB64u(daemonPublicKey),
+      };
+      localStorage.setItem(PAIRING_KEY, JSON.stringify(pairing));
+      pairingEl.style.display = 'none';
+      await setupFromPairing(pairing);
+      connect();
+    } catch (err) {
+      pairErrorEl.textContent = err instanceof Error ? err.message : String(err);
+    }
+  })();
+});
+
 form.addEventListener('submit', (e) => {
   e.preventDefault();
   const prompt = promptInput.value.trim();
@@ -151,4 +228,19 @@ function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 }
 
-connect();
+// ---- boot -----------------------------------------------------------------
+
+void (async () => {
+  if (localMode) {
+    connect();
+    return;
+  }
+  const stored = loadPairing();
+  if (stored) {
+    await setupFromPairing(stored);
+    connect();
+  } else {
+    setStatus('not paired');
+    pairingEl.style.display = 'block';
+  }
+})();
