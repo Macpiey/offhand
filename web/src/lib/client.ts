@@ -25,6 +25,7 @@ import {
   sessions,
   transcripts,
   currentSessionId,
+  justPaired,
   mutateTranscript,
   recomputeWaiting,
   toItems,
@@ -117,6 +118,7 @@ export async function pairWithCode(code: string, relayOverride?: string): Promis
   };
   localStorage.setItem(PAIRING_KEY, JSON.stringify(pairing));
   await setupFromPairing(pairing);
+  justPaired.set(true); // trigger the verify-fingerprint ritual
   connect();
 }
 

@@ -1,17 +1,28 @@
 <script lang="ts">
   import { tick } from 'svelte';
-  import { sessions, transcripts, currentSessionId, runners, type TranscriptItem } from '$lib/stores.js';
-  import { send, ensureHistory, answerApproval } from '$lib/client.js';
+  import { sessions, transcripts, currentSessionId, runners, workspaces, type TranscriptItem } from '$lib/stores.js';
+  import { send, ensureHistory } from '$lib/client.js';
+  import { renderMarkdown } from '$lib/markdown.js';
   import ReceiptCard from '$lib/components/ReceiptCard.svelte';
   import Composer from '$lib/components/Composer.svelte';
+  import ApprovalSheet from '$lib/components/ApprovalSheet.svelte';
   import Icon from '$lib/components/Icon.svelte';
 
   let scroller = $state<HTMLElement | null>(null);
   let atBottom = $state(true);
+  let menuOpen = $state(false);
 
   const session = $derived($sessions.find((s) => s.id === $currentSessionId));
   const items = $derived($transcripts.get($currentSessionId) ?? []);
   const live = $derived($sessions.filter((s) => !s.archived));
+  const workspace = $derived($workspaces.find((w) => w.path === session?.workspace));
+  const runner = $derived($runners.find((r) => r.id === session?.runnerId));
+
+  const pendingApproval = $derived(
+    [...items].reverse().find(
+      (i): i is Extract<TranscriptItem, { kind: 'approval' }> => i.kind === 'approval' && i.resolved === null,
+    ),
+  );
 
   type Block =
     | { kind: 'activity'; key: number; tools: string[] }
@@ -24,7 +35,9 @@
         if (last?.kind === 'activity') last.tools.push(item.summary);
         else out.push({ kind: 'activity', key: item.seq, tools: [item.summary] });
       } else if (item.kind === 'done' && !item.summary) {
-        continue; // silent completion — the receipt tells the story
+        continue;
+      } else if (item.kind === 'approval' && item.resolved === null) {
+        continue; // pending approvals live in the sheet, not the scroll
       } else {
         out.push({ kind: 'item', key: item.seq, item });
       }
@@ -50,79 +63,87 @@
     if (session) send({ type: 'prompt', sessionId: session.id, prompt: text });
   }
 
+  function stopRun(): void {
+    if (session) send({ type: 'cancel', sessionId: session.id });
+  }
+
   function resetConversation(): void {
+    menuOpen = false;
     if (session && confirm('Start a fresh conversation? The agent forgets prior context.')) {
       send({ type: 'session-reset', sessionId: session.id });
     }
+  }
+
+  function archiveSession(): void {
+    menuOpen = false;
+    if (session && confirm('Archive this session?')) {
+      send({ type: 'session-update', sessionId: session.id, archived: true });
+    }
+  }
+
+  function renameSession(): void {
+    menuOpen = false;
+    if (!session) return;
+    const label = prompt('Session name', session.label);
+    if (label?.trim()) send({ type: 'session-update', sessionId: session.id, label: label.trim() });
   }
 </script>
 
 {#if !session}
   <div class="empty">
-    <div class="empty-icon"><Icon name="chat" size={22} /></div>
-    <p class="empty-title">No session selected</p>
-    <p class="empty-sub">Pick one from the Sessions tab.</p>
+    <div class="empty-icon"><Icon name="chat" size={20} /></div>
+    <p class="t">No session selected</p>
+    <p class="s">Pick one from Home to get started.</p>
   </div>
 {:else}
-  <div class="head">
-    <div class="select-wrap">
-      <select value={session.id} onchange={(e) => currentSessionId.set((e.target as HTMLSelectElement).value)}>
-        {#each live as s (s.id)}<option value={s.id}>{s.label}</option>{/each}
-      </select>
-      <span class="select-chevron"><Icon name="chevron-down" size={15} /></span>
+  <div class="context">
+    <div class="ctx-row">
+      <div class="select-wrap">
+        <select value={session.id} onchange={(e) => currentSessionId.set((e.target as HTMLSelectElement).value)}>
+          {#each live as s (s.id)}<option value={s.id}>{s.label}</option>{/each}
+        </select>
+        <Icon name="chevron-down" size={14} />
+      </div>
+      <button class="icon-btn" onclick={() => (menuOpen = !menuOpen)} aria-label="Session menu">
+        <Icon name="ellipsis" size={17} />
+      </button>
     </div>
-    {#if $runners.find((r) => r.id === session.runnerId)?.supportsApprovals === false}
-      <span class="pill warn" title="This agent's CLI has no approval hook">Unguarded</span>
-    {/if}
-    <button class="icon-btn" onclick={resetConversation} aria-label="New conversation">
-      <Icon name="refresh" size={16} />
-    </button>
+    <div class="ctx-meta">
+      <span>{runner?.name ?? session.runnerId}{session.model ? ` · ${session.model}` : ''}</span>
+      {#if workspace?.gitBranch}<span class="sep">·</span><span class="mono">{workspace.gitBranch}</span>{/if}
+      {#if workspace}<span class="sep">·</span><span class="cap">{workspace.policy}</span>{/if}
+      {#if runner && !runner.supportsApprovals}<span class="sep">·</span><span class="warn">unguarded</span>{/if}
+    </div>
+    {#if session.busy}<div class="shimmer"></div>{/if}
   </div>
+
+  {#if menuOpen}
+    <div class="menu-scrim" onclick={() => (menuOpen = false)} onkeydown={() => {}} role="presentation"></div>
+    <div class="menu">
+      <button onclick={renameSession}>Rename</button>
+      <button onclick={resetConversation}><Icon name="refresh" size={14} />New conversation</button>
+      <button class="danger" onclick={archiveSession}><Icon name="archive" size={14} />Archive</button>
+    </div>
+  {/if}
 
   <div class="transcript" bind:this={scroller} onscroll={onScroll}>
     {#each blocks as block (block.key)}
       {#if block.kind === 'activity'}
         <details class="activity">
-          <summary>
-            <Icon name="terminal" size={13} />
-            {block.tools.length} action{block.tools.length > 1 ? 's' : ''}
-            <Icon name="chevron-down" size={13} />
-          </summary>
-          <ul>
-            {#each block.tools as t, i (i)}<li>{t}</li>{/each}
-          </ul>
+          <summary><Icon name="terminal" size={12} />{block.tools.length} action{block.tools.length > 1 ? 's' : ''}<Icon name="chevron-down" size={12} /></summary>
+          <ul>{#each block.tools as t, i (i)}<li>{t}</li>{/each}</ul>
         </details>
       {:else if block.item.kind === 'prompt'}
         <div class="bubble">{block.item.text}</div>
       {:else if block.item.kind === 'text'}
-        <div class="agent-text">{block.item.text}</div>
+        <!-- eslint-disable-next-line svelte/no-at-html-tags — renderMarkdown escapes all input -->
+        <div class="agent md">{@html renderMarkdown(block.item.text)}</div>
       {:else if block.item.kind === 'done'}
-        <div class="agent-text muted">{block.item.summary}</div>
+        <div class="agent dim">{block.item.summary}</div>
       {:else if block.item.kind === 'approval'}
-        <div class="approval">
-          <div class="approval-head">
-            <span class="approval-icon" class:high={block.item.risk === 'high'}>
-              <Icon name={block.item.risk === 'high' ? 'alert' : 'lock'} size={16} />
-            </span>
-            <div class="approval-copy">
-              <div class="approval-title">
-                {block.item.risk === 'high' ? 'High-risk action' : 'Permission needed'}
-              </div>
-              <div class="approval-detail">{block.item.action} · {block.item.detail}</div>
-            </div>
-          </div>
-          {#if block.item.resolved === null}
-            {@const it = block.item}
-            <div class="approval-actions">
-              <button class="deny" onclick={() => answerApproval(session.id, it.approvalId, false)}>Deny</button>
-              <button class="approve" onclick={() => answerApproval(session.id, it.approvalId, true)}>Approve</button>
-            </div>
-          {:else}
-            <div class="verdict" class:ok={block.item.resolved}>
-              <Icon name={block.item.resolved ? 'check' : 'x'} size={13} />
-              {block.item.resolved ? 'Approved' : 'Denied'}
-            </div>
-          {/if}
+        <div class="resolved" class:ok={block.item.resolved}>
+          <Icon name={block.item.resolved ? 'check' : 'x'} size={12} />
+          {block.item.resolved ? 'Approved' : 'Denied'} · {block.item.action}
         </div>
       {:else if block.item.kind === 'receipt'}
         <ReceiptCard receipt={block.item.receipt} />
@@ -131,111 +152,172 @@
       {/if}
     {:else}
       <div class="empty">
-        <div class="empty-icon"><Icon name="terminal" size={20} /></div>
-        <p class="empty-title">Ready when you are</p>
-        <p class="empty-sub">Your agent is standing by on {session.workspace.split(/[\\/]/).pop()}.</p>
+        <div class="empty-icon"><Icon name="terminal" size={18} /></div>
+        <p class="t">Ready when you are</p>
+        <p class="s">Standing by on {session.workspace.split(/[\\/]/).pop()}.</p>
       </div>
     {/each}
   </div>
 
-  <Composer busy={session.busy} queued={session.queuedPrompts} onsubmit={submitPrompt} />
+  <Composer busy={session.busy} queued={session.queuedPrompts} onsubmit={submitPrompt} onstop={stopRun} />
+
+  {#if pendingApproval}
+    <ApprovalSheet sessionId={session.id} approval={pendingApproval} />
+  {/if}
 {/if}
 
 <style>
-  .empty { text-align: center; padding: 3.5rem 1.5rem; display: flex; flex-direction: column; align-items: center; gap: 0.4rem; }
+  .empty { flex: 1; text-align: center; padding: 3.5rem 1.5rem; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.3rem; }
   .empty-icon {
-    width: 44px;
-    height: 44px;
+    width: 42px;
+    height: 42px;
     border-radius: 50%;
-    background: var(--surface);
+    background: var(--card);
     border: 1px solid var(--hairline);
-    color: var(--muted);
+    color: var(--mute);
     display: grid;
     place-items: center;
-    margin-bottom: 0.4rem;
+    margin-bottom: 0.35rem;
   }
-  .empty-title { font-weight: 600; font-size: 15.5px; margin: 0; }
-  .empty-sub { color: var(--muted); margin: 0; font-size: 13.5px; }
+  .t { font-weight: 600; font-size: 15px; margin: 0; }
+  .s { color: var(--mute); margin: 0; font-size: 13px; }
 
-  .head {
-    display: flex;
-    align-items: center;
-    gap: 0.55rem;
-    padding: 0.15rem 1.25rem 0.6rem;
-  }
-  .select-wrap { position: relative; flex: 1; min-width: 0; }
+  .context { position: relative; padding: 0 1.25rem 0.5rem; flex-shrink: 0; }
+  .ctx-row { display: flex; align-items: center; gap: 0.5rem; }
+  .select-wrap { display: flex; align-items: center; gap: 0.25rem; flex: 1; min-width: 0; color: var(--ghost); }
   .select-wrap select {
-    width: 100%;
     background: transparent;
     border: none;
-    font-weight: 600;
-    font-size: 15.5px;
-    padding: 0.35rem 1.6rem 0.35rem 0;
+    font-weight: 700;
+    font-size: 16px;
+    padding: 0.2rem 0;
     appearance: none;
+    max-width: 100%;
     text-overflow: ellipsis;
+    color: var(--ink);
   }
-  .select-chevron {
-    position: absolute;
-    right: 0.2rem;
-    top: 50%;
-    transform: translateY(-50%);
-    color: var(--faint);
-    pointer-events: none;
-    display: grid;
-    place-items: center;
+  .icon-btn {
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    background: transparent;
+    color: var(--mute);
+    border-radius: 8px;
   }
-  .pill {
-    font-size: 11px;
-    font-weight: 600;
-    border-radius: 999px;
-    padding: 0.2rem 0.6rem;
+  .icon-btn:active { background: var(--card); }
+  .ctx-meta {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 11.5px;
+    color: var(--ghost);
+    margin-top: 1px;
     white-space: nowrap;
+    overflow: hidden;
   }
-  .pill.warn { background: var(--warn-soft); color: var(--warn); }
-  .icon-btn { width: 34px; height: 34px; padding: 0; background: var(--surface); border: 1px solid var(--hairline); color: var(--muted); border-radius: var(--r-sm); }
-  .icon-btn:hover { background: var(--surface-2); }
+  .sep { opacity: 0.5; }
+  .mono { font-family: var(--mono); font-size: 11px; }
+  .cap { text-transform: capitalize; }
+  .warn { color: var(--warn); font-weight: 600; }
+  .shimmer {
+    position: absolute;
+    left: 1.25rem;
+    right: 1.25rem;
+    bottom: 0;
+    height: 2px;
+    border-radius: 1px;
+    background: linear-gradient(90deg, transparent, var(--brand), transparent);
+    background-size: 200% 100%;
+    animation: slide 1.4s linear infinite;
+  }
+  @keyframes slide { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+
+  .menu-scrim { position: fixed; inset: 0; z-index: 20; }
+  .menu {
+    position: absolute;
+    top: calc(var(--inset-t) + 3.4rem);
+    right: 1.25rem;
+    z-index: 21;
+    background: var(--raised);
+    border: 1px solid var(--hairline-2);
+    border-radius: 12px;
+    padding: 0.35rem;
+    display: flex;
+    flex-direction: column;
+    min-width: 190px;
+    box-shadow: 0 10px 32px rgba(0, 0, 0, 0.45);
+    animation: pop 0.12s ease-out;
+  }
+  @keyframes pop { from { opacity: 0; transform: translateY(-4px); } }
+  .menu button {
+    justify-content: flex-start;
+    height: 40px;
+    background: transparent;
+    color: var(--ink);
+    font-weight: 500;
+    border-radius: 8px;
+    gap: 0.6rem;
+  }
+  .menu button:active { background: var(--card); }
+  .menu .danger { color: var(--risk); }
 
   .transcript {
     flex: 1;
+    min-height: 0;
     overflow-y: auto;
-    padding: 0.4rem 1.25rem 1rem;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+    padding: 0.4rem 1.25rem 0.8rem;
     display: flex;
     flex-direction: column;
-    gap: 0.7rem;
+    gap: 0.65rem;
   }
   .bubble {
     align-self: flex-end;
     max-width: 84%;
-    background: var(--surface-2);
+    background: var(--raised);
     border: 1px solid var(--hairline);
-    border-radius: var(--r-lg);
-    border-bottom-right-radius: var(--r-sm);
+    border-radius: 18px 18px 6px 18px;
     padding: 0.6rem 0.95rem;
     white-space: pre-wrap;
     word-break: break-word;
-    margin-top: 0.5rem;
+    margin-top: 0.55rem;
     font-size: 14.5px;
   }
-  .agent-text {
-    max-width: 94%;
-    white-space: pre-wrap;
-    word-break: break-word;
-    font-size: 15px;
-    line-height: 1.6;
+  .agent { max-width: 94%; font-size: 15px; line-height: 1.6; word-break: break-word; }
+  .agent.dim { color: var(--mute); }
+  .md :global(p) { margin: 0 0 0.35rem; }
+  .md :global(h3), .md :global(h4), .md :global(h5) { margin: 0.6rem 0 0.25rem; font-size: 15.5px; }
+  .md :global(ul) { margin: 0.2rem 0 0.4rem; padding-left: 1.3rem; }
+  .md :global(code) {
+    font: 12.5px var(--mono);
+    background: var(--card);
+    border: 1px solid var(--hairline);
+    border-radius: 5px;
+    padding: 0.05rem 0.35rem;
   }
-  .agent-text.muted { color: var(--muted); }
+  .md :global(.md-code) {
+    font: 12px/1.55 var(--mono);
+    background: var(--card);
+    border: 1px solid var(--hairline);
+    border-radius: var(--r-ctl);
+    padding: 0.6rem 0.8rem;
+    overflow-x: auto;
+    margin: 0.35rem 0;
+  }
+  .md :global(a) { color: var(--brand); }
 
   .activity {
     align-self: flex-start;
     border: 1px solid var(--hairline);
     border-radius: 999px;
-    padding: 0.25rem 0.8rem;
+    padding: 0.22rem 0.75rem;
     font-size: 12px;
     font-weight: 500;
-    color: var(--muted);
+    color: var(--mute);
     max-width: 94%;
   }
-  .activity[open] { border-radius: var(--r-md); }
+  .activity[open] { border-radius: 12px; }
   .activity summary {
     cursor: pointer;
     list-style: none;
@@ -244,65 +326,29 @@
     gap: 0.4rem;
   }
   .activity summary::-webkit-details-marker { display: none; }
-  .activity ul { margin: 0.5rem 0 0.3rem; padding-left: 0.3rem; list-style: none; display: flex; flex-direction: column; gap: 0.25rem; }
-  .activity li {
-    font-family: var(--font-mono);
-    font-size: 11px;
-    color: var(--faint);
-    word-break: break-all;
-  }
+  .activity ul { margin: 0.45rem 0 0.25rem; padding-left: 0.2rem; list-style: none; display: flex; flex-direction: column; gap: 0.25rem; }
+  .activity li { font: 11px/1.5 var(--mono); color: var(--ghost); word-break: break-all; }
 
-  .approval {
-    background: var(--surface);
-    border: 1px solid var(--hairline-strong);
-    border-radius: var(--r-lg);
-    padding: 0.85rem 0.95rem;
-    max-width: 94%;
-    display: flex;
-    flex-direction: column;
-    gap: 0.7rem;
-  }
-  .approval-head { display: flex; gap: 0.7rem; align-items: flex-start; }
-  .approval-icon {
-    width: 32px;
-    height: 32px;
-    border-radius: var(--r-sm);
-    background: var(--warn-soft);
-    color: var(--warn);
-    display: grid;
-    place-items: center;
-    flex-shrink: 0;
-  }
-  .approval-icon.high { background: var(--bad-soft); color: var(--bad); }
-  .approval-copy { min-width: 0; }
-  .approval-title { font-weight: 600; font-size: 14.5px; }
-  .approval-detail {
-    color: var(--muted);
-    font-size: 12px;
-    font-family: var(--font-mono);
-    word-break: break-all;
-    margin-top: 0.2rem;
-  }
-  .approval-actions { display: flex; gap: 0.55rem; }
-  .approve { flex: 1; }
-  .deny { flex: 1; background: var(--surface-2); color: var(--text); border: 1px solid var(--hairline); }
-  .deny:hover { background: var(--surface-2); border-color: var(--bad); color: var(--bad); }
-  .verdict {
+  .resolved {
     display: inline-flex;
     align-items: center;
-    gap: 0.35rem;
-    font-size: 12.5px;
+    gap: 0.4rem;
+    align-self: flex-start;
+    font-size: 12px;
     font-weight: 600;
-    color: var(--bad);
+    color: var(--risk);
+    background: var(--risk-soft);
+    border-radius: 999px;
+    padding: 0.25rem 0.75rem;
   }
-  .verdict.ok { color: var(--ok); }
+  .resolved.ok { color: var(--ok); background: var(--ok-soft); }
 
   .error {
-    background: var(--bad-soft);
-    border: 1px solid color-mix(in srgb, var(--bad) 25%, transparent);
-    border-radius: var(--r-md);
-    color: var(--bad);
-    padding: 0.6rem 0.9rem;
+    background: var(--risk-soft);
+    border: 1px solid color-mix(in srgb, var(--risk) 25%, transparent);
+    border-radius: var(--r-ctl);
+    color: var(--risk);
+    padding: 0.55rem 0.85rem;
     font-size: 13px;
     white-space: pre-wrap;
     word-break: break-word;

@@ -21,6 +21,7 @@ export type TranscriptItem =
       action: string;
       detail: string;
       risk: 'low' | 'high';
+      preview: string | null;
       resolved: null | boolean;
     }
   | { kind: 'receipt'; seq: number; receipt: Receipt }
@@ -53,6 +54,9 @@ export const currentSessionId = writable<string>(
 );
 /** Sessions with an unresolved approval — powers the "waiting on you" UI. */
 export const waiting = writable<Set<string>>(new Set());
+
+/** True right after a successful pairing — the layout shows the verify ritual. */
+export const justPaired = writable(false);
 
 currentSessionId.subscribe((id) => {
   if (typeof localStorage !== 'undefined' && id) localStorage.setItem('offhand.currentSession', id);
@@ -103,6 +107,7 @@ export function toItems(msg: ServerMessage): { sessionId: string; items: Transcr
                 action: ev.action,
                 detail: ev.detail,
                 risk: ev.risk,
+                preview: ev.preview ?? null,
                 resolved: null,
               },
             ],

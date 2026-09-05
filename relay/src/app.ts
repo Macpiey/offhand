@@ -35,6 +35,8 @@ interface Session {
 interface PendingPairing {
   phonePublicKeyB64: string | null;
   expiresAtMs: number;
+  /** Token already picked up by the daemon — any further answer is rejected. */
+  consumed?: boolean;
 }
 
 const PAIRING_TTL_MS = 10 * 60 * 1000;
@@ -136,6 +138,11 @@ export function buildApp(opts: { logger?: unknown } = {}): FastifyInstance {
       return reply.code(400).send({ error: 'bad pairing answer' });
     }
     const existing = pairings.get(token);
+    if (existing?.consumed) {
+      // Daemon already picked up an answer — a second answer is a replay or
+      // an interception attempt. Refuse loudly.
+      return reply.code(410).send({ error: 'pairing code already used — generate a new one' });
+    }
     if (existing?.phonePublicKeyB64) {
       // First answer wins; a second answer is either a retry or an attacker —
       // reject and let the humans compare fingerprints.
@@ -154,8 +161,10 @@ export function buildApp(opts: { logger?: unknown } = {}): FastifyInstance {
     const token = (req.params as { token: string }).token;
     const p = pairings.get(token);
     if (!p?.phonePublicKeyB64) return reply.code(404).send({ error: 'no answer yet' });
-    pairings.delete(token); // one-shot pickup
-    return { phonePublicKey: p.phonePublicKeyB64 };
+    // One-shot pickup; keep a consumed tombstone so token reuse fails loudly.
+    const key = p.phonePublicKeyB64;
+    pairings.set(token, { phonePublicKeyB64: null, consumed: true, expiresAtMs: p.expiresAtMs });
+    return { phonePublicKey: key };
   });
 
   // ---- encrypted artifact blobs (M5) --------------------------------------

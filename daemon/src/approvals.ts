@@ -46,12 +46,14 @@ export class ApprovalBroker {
       return Promise.resolve({ approve: true });
     }
     const id = randomUUID();
+    const preview = buildPreview(toolName, input);
     const event: RunEvent = {
       type: 'approval',
       id,
       action: toolName,
       detail: summariseInput(input),
       risk,
+      ...(preview ? { preview } : {}),
     };
     return new Promise<Verdict>((settle) => {
       const timer = setTimeout(() => {
@@ -97,6 +99,25 @@ export function summariseInput(input: unknown): string {
     if (typeof i[key] === 'string' && i[key] !== '') return truncate(`${key}: ${i[key] as string}`, 200);
   }
   return truncate(JSON.stringify(input), 200);
+}
+
+/** Content preview for the approval sheet: what will actually change/run. */
+export function buildPreview(toolName: string, input: unknown): string | undefined {
+  if (typeof input !== 'object' || input === null) return undefined;
+  const i = input as Record<string, unknown>;
+  if (/^(Edit|MultiEdit)/.test(toolName) && typeof i.new_string === 'string') {
+    const oldS = typeof i.old_string === 'string' ? i.old_string : '';
+    const lines = [
+      ...oldS.split('\n').map((l) => `- ${l}`),
+      ...(i.new_string as string).split('\n').map((l) => `+ ${l}`),
+    ];
+    return truncate(lines.join('\n'), 600);
+  }
+  if (/^Write/.test(toolName) && typeof i.content === 'string') {
+    return truncate((i.content as string).split('\n').map((l) => `+ ${l}`).join('\n'), 600);
+  }
+  if (typeof i.command === 'string') return truncate(`$ ${i.command as string}`, 600);
+  return undefined;
 }
 
 function truncate(s: string, max: number): string {

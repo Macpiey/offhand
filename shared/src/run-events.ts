@@ -14,6 +14,8 @@ export const RunEventSchema = z.discriminatedUnion('type', [
     action: z.string(),
     detail: z.string(),
     risk: z.enum(['low', 'high']),
+    /** Optional content preview (edit diff / command) shown in the approval sheet. */
+    preview: z.string().optional(),
   }),
   /** Encrypted blob reference (M5): phone fetches + decrypts locally. */
   z.object({

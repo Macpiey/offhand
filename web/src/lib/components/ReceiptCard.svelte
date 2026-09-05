@@ -27,32 +27,27 @@
 <div class="receipt">
   <div class="row">
     <span class="status" class:fail={!receipt.ok}>
-      <Icon name={receipt.ok ? 'check' : 'x'} size={13} stroke={2.5} />
+      <Icon name={receipt.ok ? 'check' : 'x'} size={12} stroke={2.6} />
     </span>
     <span class="summary">
       {#if receipt.filesChanged > 0}
-        {receipt.filesChanged} file{receipt.filesChanged > 1 ? 's' : ''} changed
+        {receipt.filesChanged} file{receipt.filesChanged > 1 ? 's' : ''}
         <span class="add">+{receipt.additions}</span>
         <span class="del">−{receipt.deletions}</span>
       {:else}
-        {receipt.ok ? 'Completed' : 'Failed'} · no file changes
+        {receipt.ok ? 'Completed' : 'Failed'}
       {/if}
     </span>
     <span class="time">{secs}s</span>
+    {#if receipt.diff}
+      <button class="chip" class:on={showDiff} onclick={() => (showDiff = !showDiff)}>
+        <Icon name="diff" size={12} />Diff
+      </button>
+    {/if}
+    {#if receipt.screenshotBlobId && !showShot}
+      <button class="chip" onclick={loadShot}><Icon name="camera" size={12} /></button>
+    {/if}
   </div>
-
-  {#if receipt.diff || receipt.screenshotBlobId}
-    <div class="actions">
-      {#if receipt.diff}
-        <button class="action" class:on={showDiff} onclick={() => (showDiff = !showDiff)}>
-          <Icon name="diff" size={13} />{showDiff ? 'Hide diff' : 'Diff'}
-        </button>
-      {/if}
-      {#if receipt.screenshotBlobId && !showShot}
-        <button class="action" onclick={loadShot}><Icon name="camera" size={13} />Screenshot</button>
-      {/if}
-    </div>
-  {/if}
 
   {#if showDiff && receipt.diff}
     <pre>{#each receipt.diff.split('\n') as line, i (i)}<span
@@ -75,20 +70,19 @@
 
 <style>
   .receipt {
-    background: var(--surface);
+    background: var(--card);
     border: 1px solid var(--hairline);
-    border-radius: var(--r-lg);
-    padding: 0.7rem 0.95rem;
-    max-width: 94%;
-    font-size: 13.5px;
+    border-radius: 12px;
+    padding: 0.55rem 0.75rem;
+    font-size: 13px;
     display: flex;
     flex-direction: column;
-    gap: 0.55rem;
+    gap: 0.5rem;
   }
-  .row { display: flex; align-items: center; gap: 0.6rem; }
+  .row { display: flex; align-items: center; gap: 0.55rem; }
   .status {
-    width: 22px;
-    height: 22px;
+    width: 20px;
+    height: 20px;
     border-radius: 50%;
     background: var(--ok-soft);
     color: var(--ok);
@@ -96,38 +90,38 @@
     place-items: center;
     flex-shrink: 0;
   }
-  .status.fail { background: var(--bad-soft); color: var(--bad); }
-  .summary { flex: 1; font-weight: 500; }
+  .status.fail { background: var(--risk-soft); color: var(--risk); }
+  .summary { flex: 1; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .add { color: var(--ok); font-weight: 600; }
-  .del { color: var(--bad); font-weight: 600; }
-  .time { color: var(--faint); font-size: 12px; font-variant-numeric: tabular-nums; }
-  .actions { display: flex; gap: 0.45rem; }
-  .action {
-    height: 30px;
-    padding: 0 0.75rem;
+  .del { color: var(--risk); font-weight: 600; }
+  .time { color: var(--ghost); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+  .chip {
+    height: 26px;
+    padding: 0 0.6rem;
     background: transparent;
-    border: 1px solid var(--hairline-strong);
-    color: var(--muted);
-    font-size: 12px;
-    border-radius: var(--r-sm);
-    gap: 0.35rem;
+    border: 1px solid var(--hairline-2);
+    color: var(--mute);
+    font-size: 11.5px;
+    border-radius: 8px;
+    gap: 0.3rem;
+    flex-shrink: 0;
   }
-  .action:hover, .action.on { background: var(--surface-2); color: var(--text); }
+  .chip:active, .chip.on { background: var(--raised); color: var(--ink); }
   pre {
     overflow-x: auto;
-    font: 11px/1.55 var(--font-mono);
-    max-height: 46vh;
+    font: 11px/1.55 var(--mono);
+    max-height: 44vh;
     margin: 0;
     background: var(--bg);
     border: 1px solid var(--hairline);
-    border-radius: var(--r-md);
-    padding: 0.6rem 0.8rem;
+    border-radius: var(--r-ctl);
+    padding: 0.55rem 0.75rem;
   }
   pre span { display: block; white-space: pre; }
   .dadd { color: var(--ok); }
-  .ddel { color: var(--bad); }
-  .dhunk { color: var(--muted); }
-  img { max-width: 100%; border-radius: var(--r-md); border: 1px solid var(--hairline); }
-  .note { color: var(--muted); font-size: 12.5px; }
-  .note.bad { color: var(--bad); }
+  .ddel { color: var(--risk); }
+  .dhunk { color: var(--mute); }
+  img { max-width: 100%; border-radius: var(--r-ctl); border: 1px solid var(--hairline); }
+  .note { color: var(--mute); font-size: 12px; }
+  .note.bad { color: var(--risk); }
 </style>
