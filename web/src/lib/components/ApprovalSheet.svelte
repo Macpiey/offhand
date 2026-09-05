@@ -13,7 +13,27 @@
   } = $props();
 
   const high = $derived(approval.risk === 'high');
-  const isQuestion = $derived(approval.action === 'AskUserQuestion');
+  const question = $derived(approval.question);
+
+  // Question sheets: selection state (radio or checkboxes for multiSelect).
+  let picked = $state<Set<number>>(new Set());
+  function toggle(n: number): void {
+    const next = new Set(picked);
+    if (question?.multiSelect) {
+      if (next.has(n)) next.delete(n);
+      else next.add(n);
+    } else {
+      next.clear();
+      next.add(n);
+    }
+    picked = next;
+  }
+  function submitAnswer(): void {
+    if (!question || picked.size === 0) return;
+    const labels = [...picked].sort((a, b) => a - b).map((n) => question.options[n]!.label);
+    if ('vibrate' in navigator) navigator.vibrate?.(12);
+    answerApproval(sessionId, approval.approvalId, true, labels.join('; '));
+  }
 
   // High-risk: hold-to-approve (800ms) — deliberate friction.
   let holding = $state(false);
@@ -54,25 +74,52 @@
   <div class="scrim"></div>
   <div class="sheet" class:high role="dialog" aria-label="Approval required">
   <div class="handle"></div>
+  {#if question}
+    <div class="head">
+      <span class="tile q"><Icon name="chat" size={17} /></span>
+      <div class="copy">
+        <div class="title">Your agent asks</div>
+        <div class="action">{question.multiSelect ? 'Pick one or more' : 'Pick one'}</div>
+      </div>
+    </div>
+    <div class="qtext">{question.text}</div>
+    <div class="opts">
+      {#each question.options as o, n (n)}
+        <button class="opt" class:sel={picked.has(n)} onclick={() => toggle(n)}>
+          <span class="mark" class:on={picked.has(n)} class:box={question.multiSelect}>
+            {#if picked.has(n) && question.multiSelect}<Icon name="check" size={11} stroke={2.5} />{/if}
+          </span>
+          <span class="opt-copy">
+            <span class="opt-label">{o.label}</span>
+            {#if o.description}<span class="opt-desc">{o.description}</span>{/if}
+          </span>
+        </button>
+      {/each}
+    </div>
+    <div class="actions">
+      <button class="deny" onclick={() => answerApproval(sessionId, approval.approvalId, false)}>Dismiss</button>
+      <button class="approve" disabled={picked.size === 0} onclick={submitAnswer}>Answer</button>
+    </div>
+  {:else}
   <div class="head">
-    <span class="tile" class:high class:q={isQuestion}><Icon name={isQuestion ? 'chat' : high ? 'alert' : 'lock'} size={17} /></span>
+    <span class="tile" class:high><Icon name={high ? 'alert' : 'lock'} size={17} /></span>
     <div class="copy">
-      <div class="title">{isQuestion ? 'Your agent has a question' : high ? 'High-risk action' : 'Permission needed'}</div>
-      <div class="action">{isQuestion ? 'It will list the choices in chat' : approval.action}</div>
+      <div class="title">{high ? 'High-risk action' : 'Permission needed'}</div>
+      <div class="action">{approval.action}</div>
     </div>
   </div>
-  {#if !isQuestion}<div class="detail">{approval.detail}</div>{/if}
+  <div class="detail">{approval.detail}</div>
 
   {#if approval.preview}
-    <pre class="preview" class:qa={isQuestion}>{#each approval.preview.split('\n') as line, i (i)}<span
-          class:add={!isQuestion && line.startsWith('+')}
-          class:del={!isQuestion && line.startsWith('-')}
-          class:cmd={!isQuestion && line.startsWith('$')}>{line}
+    <pre class="preview">{#each approval.preview.split('\n') as line, i (i)}<span
+          class:add={line.startsWith('+')}
+          class:del={line.startsWith('-')}
+          class:cmd={line.startsWith('$')}>{line}
 </span>{/each}</pre>
   {/if}
 
   <div class="actions">
-    <button class="deny" onclick={() => answerApproval(sessionId, approval.approvalId, false)}>{isQuestion ? 'Dismiss' : 'Deny'}</button>
+    <button class="deny" onclick={() => answerApproval(sessionId, approval.approvalId, false)}>Deny</button>
     {#if high}
       <button
         class="approve hold"
@@ -85,9 +132,10 @@
         <span class="lbl">{holding ? 'Keep holding…' : 'Hold to approve'}</span>
       </button>
     {:else}
-      <button class="approve" onclick={approveTap}>{isQuestion ? 'Ask me in chat' : 'Approve'}</button>
+      <button class="approve" onclick={approveTap}>Approve</button>
     {/if}
   </div>
+  {/if}
   </div>
 </div>
 
@@ -157,8 +205,40 @@
   .preview .add { color: var(--ok); }
   .preview .del { color: var(--risk); }
   .preview .cmd { color: var(--warn); }
-  .preview.qa { font: 400 13.5px/1.6 var(--font); word-break: normal; color: var(--ink); }
-  .preview.qa span { word-break: normal; }
+  .qtext { font: 600 15.5px/1.45 var(--font); }
+  .opts { display: flex; flex-direction: column; gap: 0.45rem; max-height: 38dvh; overflow-y: auto; }
+  .opt {
+    justify-content: flex-start;
+    align-items: center;
+    min-height: 50px;
+    height: auto;
+    padding: 0.6rem 0.9rem;
+    background: var(--bg);
+    border: 1px solid var(--hairline);
+    color: var(--ink);
+    font-weight: 500;
+    gap: 0.75rem;
+    text-align: left;
+    border-radius: 12px;
+  }
+  .opt:active { background: var(--bg); }
+  .opt.sel { border-color: var(--brand); background: var(--brand-soft); }
+  .mark {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    border: 1.5px solid var(--ghost);
+    flex-shrink: 0;
+    display: grid;
+    place-items: center;
+    color: #fff;
+  }
+  .mark.box { border-radius: 5px; }
+  .mark.on { border-color: var(--brand); background: var(--brand); }
+  .mark.on:not(.box) { background: radial-gradient(circle, #fff 30%, var(--brand) 38%); }
+  .opt-copy { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .opt-label { font-size: 14.5px; font-weight: 600; }
+  .opt-desc { font-size: 12px; color: var(--mute); line-height: 1.4; font-weight: 400; }
   .actions { display: flex; gap: 0.6rem; }
   .deny {
     flex: 1;

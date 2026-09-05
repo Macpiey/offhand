@@ -30,6 +30,8 @@ export const ClientMessageSchema = z.discriminatedUnion('type', [
     type: z.literal('approval-response'),
     approvalId: z.string(),
     approve: z.boolean(),
+    /** When the approval was a question: the selected option label(s). */
+    answer: z.string().optional(),
   }),
   z.object({ type: z.literal('resume'), afterSeq: z.number().int().nonnegative() }),
   /** Ask for hello + manifest (sent by clients on every connect). */

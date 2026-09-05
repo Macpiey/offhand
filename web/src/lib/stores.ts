@@ -22,7 +22,9 @@ export type TranscriptItem =
       detail: string;
       risk: 'low' | 'high';
       preview: string | null;
+      question: { text: string; options: { label: string; description?: string }[]; multiSelect?: boolean } | null;
       resolved: null | boolean;
+      answer: string | null;
     }
   | { kind: 'receipt'; seq: number; receipt: Receipt }
   | { kind: 'done'; seq: number; summary: string }
@@ -108,7 +110,9 @@ export function toItems(msg: ServerMessage): { sessionId: string; items: Transcr
                 detail: ev.detail,
                 risk: ev.risk,
                 preview: ev.preview ?? null,
+                question: ev.question ?? null,
                 resolved: null,
+                answer: null,
               },
             ],
           };

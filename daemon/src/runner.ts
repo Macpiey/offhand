@@ -25,6 +25,6 @@ export interface AgentRunner {
 export interface RunHandle {
   events: AsyncIterable<RunEvent>;
   /** Feed an approval verdict back to the agent. */
-  respond(approvalId: string, ok: boolean): void;
+  respond(approvalId: string, ok: boolean, answer?: string): void;
   cancel(): void;
 }

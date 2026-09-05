@@ -16,6 +16,14 @@ export const RunEventSchema = z.discriminatedUnion('type', [
     risk: z.enum(['low', 'high']),
     /** Optional content preview (edit diff / command) shown in the approval sheet. */
     preview: z.string().optional(),
+    /** AskUserQuestion payload: render the actual question with options. */
+    question: z
+      .object({
+        text: z.string(),
+        options: z.array(z.object({ label: z.string(), description: z.string().optional() })),
+        multiSelect: z.boolean().optional(),
+      })
+      .optional(),
   }),
   /** Encrypted blob reference (M5): phone fetches + decrypts locally. */
   z.object({
@@ -25,7 +33,13 @@ export const RunEventSchema = z.discriminatedUnion('type', [
     label: z.string(),
   }),
   /** Verdict echo: makes answered approvals resolve correctly on replay. */
-  z.object({ type: z.literal('approval-result'), id: z.string(), approve: z.boolean() }),
+  z.object({
+    type: z.literal('approval-result'),
+    id: z.string(),
+    approve: z.boolean(),
+    /** The option the user picked when the approval was a question. */
+    answer: z.string().optional(),
+  }),
   z.object({ type: z.literal('done'), summary: z.string() }),
   z.object({ type: z.literal('error'), message: z.string() }),
 ]);

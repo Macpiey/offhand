@@ -155,8 +155,8 @@ export class ClaudeCodeRunner implements AgentRunner {
 
     return {
       events: queue,
-      respond: (approvalId, ok) => {
-        this.broker?.resolve(approvalId, ok);
+      respond: (approvalId, ok, answer) => {
+        this.broker?.resolve(approvalId, ok, answer);
       },
       cancel: () => child.kill(),
     };

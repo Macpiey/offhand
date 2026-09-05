@@ -138,7 +138,7 @@ export class SessionManager {
         return;
       case 'approval-response':
         // Any active run may own it; respond() is a no-op for wrong runs.
-        for (const handle of this.active.values()) handle.respond(msg.approvalId, msg.approve);
+        for (const handle of this.active.values()) handle.respond(msg.approvalId, msg.approve, msg.answer);
         return;
       case 'sync':
         // Phones connect to the relay after the daemon did — they ask for the

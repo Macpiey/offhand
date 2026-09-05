@@ -227,9 +227,11 @@ function handleServer(msg: ServerMessage): void {
 
 function applyLogged(msg: ServerMessage): void {
   if (msg.type === 'run-event' && msg.event.type === 'approval-result') {
-    const { id, approve } = msg.event;
+    const { id, approve, answer } = msg.event;
     mutateTranscript(msg.sessionId, (items) =>
-      items.map((i) => (i.kind === 'approval' && i.approvalId === id ? { ...i, resolved: approve } : i)),
+      items.map((i) =>
+        i.kind === 'approval' && i.approvalId === id ? { ...i, resolved: approve, answer: answer ?? i.answer } : i,
+      ),
     );
     recomputeWaiting();
     return;
@@ -281,10 +283,10 @@ export async function ensureHistory(sessionId: string): Promise<void> {
 
   // Build rows oldest-first, resolving approvals from their results.
   const rows: TranscriptItem[] = [];
-  const resolutions = new Map<string, boolean>();
+  const resolutions = new Map<string, { approve: boolean; answer: string | null }>();
   for (const m of parsed) {
     if (m.type === 'run-event' && m.event.type === 'approval-result') {
-      resolutions.set(m.event.id, m.event.approve);
+      resolutions.set(m.event.id, { approve: m.event.approve, answer: m.event.answer ?? null });
       continue;
     }
     const conv = toItems(m);
@@ -301,11 +303,11 @@ export async function ensureHistory(sessionId: string): Promise<void> {
       }
     }
   }
-  const finalized = rows.map((r) =>
-    r.kind === 'approval'
-      ? { ...r, resolved: resolutions.has(r.approvalId) ? resolutions.get(r.approvalId)! : r.resolved }
-      : r,
-  );
+  const finalized = rows.map((r) => {
+    if (r.kind !== 'approval') return r;
+    const v = resolutions.get(r.approvalId);
+    return v ? { ...r, resolved: v.approve, answer: v.answer ?? r.answer } : r;
+  });
 
   // Prepend history before any live rows that arrived meanwhile.
   const maxHistSeq = finalized.length ? finalized[finalized.length - 1]!.seq : 0;
@@ -347,10 +349,12 @@ export async function fetchArtifact(blobId: string): Promise<Uint8Array> {
 
 // ---- approvals ------------------------------------------------------------------
 
-export function answerApproval(sessionId: string, approvalId: string, approve: boolean): void {
-  send({ type: 'approval-response', approvalId, approve });
+export function answerApproval(sessionId: string, approvalId: string, approve: boolean, answer?: string): void {
+  send({ type: 'approval-response', approvalId, approve, ...(answer !== undefined ? { answer } : {}) });
   mutateTranscript(sessionId, (items) =>
-    items.map((i) => (i.kind === 'approval' && i.approvalId === approvalId ? { ...i, resolved: approve } : i)),
+    items.map((i) =>
+      i.kind === 'approval' && i.approvalId === approvalId ? { ...i, resolved: approve, answer: answer ?? null } : i,
+    ),
   );
   recomputeWaiting();
 }

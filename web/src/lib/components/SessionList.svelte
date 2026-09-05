@@ -20,7 +20,12 @@
       return {
         icon: 'lock',
         cls: 'warn',
-        text: a && a.kind === 'approval' ? `Waiting: ${a.action}` : 'Waiting for approval',
+        text:
+          a && a.kind === 'approval'
+            ? a.question
+              ? 'Has a question for you'
+              : `Waiting: ${a.action}`
+            : 'Waiting for approval',
       };
     }
     const s = live.find((x) => x.id === id);

@@ -48,6 +48,7 @@ export class ApprovalBroker {
     }
     const id = randomUUID();
     const preview = buildPreview(toolName, input);
+    const question = typeof input === 'object' && input !== null ? firstQuestion(input as Record<string, unknown>) : undefined;
     const event: RunEvent = {
       type: 'approval',
       id,
@@ -55,6 +56,7 @@ export class ApprovalBroker {
       detail: summariseInput(input),
       risk,
       ...(preview ? { preview } : {}),
+      ...(question ? { question } : {}),
     };
     return new Promise<Verdict>((settle) => {
       const timer = setTimeout(() => {
@@ -67,12 +69,24 @@ export class ApprovalBroker {
     });
   }
 
-  /** Phone verdict arrives (via RunHandle.respond). */
-  resolve(approvalId: string, approve: boolean): boolean {
+  /** Phone verdict arrives (via RunHandle.respond). When `answer` is present
+   * the user picked an option for an agent question: the MCP tool call is
+   * denied, but the deny MESSAGE carries the answer — the agent reads it and
+   * continues with the user's choice (the closest thing to answering that the
+   * permission-prompt protocol allows). */
+  resolve(approvalId: string, approve: boolean, answer?: string): boolean {
     const p = this.pending.get(approvalId);
     if (!p) return false;
     this.pending.delete(approvalId);
     clearTimeout(p.timer);
+    if (answer !== undefined) {
+      p.settle({
+        approve: false,
+        message: `The user answered your question directly from their phone: "${answer}". This IS their answer — proceed with it and do not ask again.`,
+      });
+      this.listener?.({ type: 'approval-result', id: approvalId, approve: true, answer });
+      return true;
+    }
     p.settle({ approve, message: approve ? undefined : 'denied from phone' });
     // Echo the verdict into the transcript so replays resolve the card.
     this.listener?.({ type: 'approval-result', id: approvalId, approve });
@@ -97,7 +111,7 @@ export function summariseInput(input: unknown): string {
   if (typeof input !== 'object' || input === null) return String(input ?? '');
   const i = input as Record<string, unknown>;
   const q = firstQuestion(i);
-  if (q) return truncate(q.question, 200);
+  if (q) return truncate(q.text, 200);
   for (const key of ['command', 'file_path', 'path', 'url', 'pattern', 'description']) {
     if (typeof i[key] === 'string' && i[key] !== '') return truncate(`${key}: ${i[key] as string}`, 200);
   }
@@ -105,8 +119,9 @@ export function summariseInput(input: unknown): string {
 }
 
 interface AskQuestion {
-  question: string;
+  text: string;
   options: { label: string; description?: string }[];
+  multiSelect?: boolean;
 }
 
 /** Extract the first question from AskUserQuestion-style input, if present. */
@@ -122,7 +137,7 @@ function firstQuestion(i: Record<string, unknown>): AskQuestion | undefined {
           ...(typeof o.description === 'string' ? { description: o.description } : {}),
         }))
     : [];
-  return { question: q.question, options };
+  return { text: q.question, options, ...(q.multiSelect === true ? { multiSelect: true } : {}) };
 }
 
 /** Content preview for the approval sheet: what will actually change/run. */
@@ -131,7 +146,7 @@ export function buildPreview(toolName: string, input: unknown): string | undefin
   const i = input as Record<string, unknown>;
   const q = firstQuestion(i);
   if (q) {
-    const lines = [q.question, ...q.options.map((o, n) => `${n + 1}. ${o.label}${o.description ? ` — ${o.description}` : ''}`)];
+    const lines = [q.text, ...q.options.map((o, n) => `${n + 1}. ${o.label}${o.description ? ` — ${o.description}` : ''}`)];
     return truncate(lines.join('\n'), 600);
   }
   if (/^(Edit|MultiEdit)/.test(toolName) && typeof i.new_string === 'string') {

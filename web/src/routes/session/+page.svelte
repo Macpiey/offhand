@@ -144,7 +144,7 @@
       {:else if block.item.kind === 'approval'}
         <div class="resolved" class:ok={block.item.resolved}>
           <Icon name={block.item.resolved ? 'check' : 'x'} size={12} />
-          {block.item.resolved ? 'Approved' : 'Denied'} · {block.item.action}
+          {#if block.item.answer}Answered · {block.item.answer}{:else}{block.item.resolved ? 'Approved' : 'Denied'} · {block.item.action}{/if}
         </div>
       {:else if block.item.kind === 'receipt'}
         <ReceiptCard receipt={block.item.receipt} />
