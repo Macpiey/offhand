@@ -41,7 +41,11 @@ export interface PairingResult {
   sas: string;
 }
 
-export async function ensurePairing(relayUrl: string, forceNew = false): Promise<PairingResult> {
+export async function ensurePairing(
+  relayUrl: string,
+  forceNew = false,
+  webUrl = 'https://offhand-web.onrender.com',
+): Promise<PairingResult> {
   await ready;
 
   if (!forceNew && existsSync(PAIRING_PATH)) {
@@ -58,10 +62,17 @@ export async function ensurePairing(relayUrl: string, forceNew = false): Promise
   const kp = generateKeyPair();
   const token = String(randomInt(100000, 999999));
   const code = encodePairingCode(token, kp.publicKey);
+  const pairLink = `${webUrl.replace(/\/$/, '')}/#pair=${encodeURIComponent(code)}&relay=${encodeURIComponent(relayUrl.replace(/\/$/, ''))}`;
 
   console.log('');
   console.log('  ── PAIRING ──────────────────────────────────────────────');
-  console.log('  On your phone, open the web client and enter this code:');
+  console.log('  Scan this with your phone camera:');
+  console.log('');
+  const qrcode = (await import('qrcode-terminal')).default;
+  qrcode.generate(pairLink, { small: true }, (qr: string) => {
+    console.log(qr.replace(/^/gm, '      '));
+  });
+  console.log(`  …or open ${webUrl} and enter the code manually:`);
   console.log('');
   console.log(`      ${code}`);
   console.log('');

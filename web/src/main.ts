@@ -34,6 +34,8 @@ interface StoredPairing {
 }
 
 const PAIRING_KEY = 'offhand.pairing';
+const A2HS_DISMISSED_KEY = 'offhand.a2hs-dismissed';
+const DEFAULT_RELAY_URL = 'https://offhand-relay.onrender.com';
 const localMode = new URLSearchParams(location.search).has('local');
 
 const statusEl = document.getElementById('status')!;
@@ -45,6 +47,9 @@ const pairCodeInput = document.getElementById('pair-code') as HTMLInputElement;
 const pairErrorEl = document.getElementById('pair-error')!;
 const form = document.getElementById('form') as HTMLFormElement;
 const promptInput = document.getElementById('prompt') as HTMLInputElement;
+const settingsEl = document.getElementById('settings')!;
+const settingsInfoEl = document.getElementById('settings-info')!;
+const a2hsHintEl = document.getElementById('a2hs-hint')!;
 
 let ws: WebSocket | null = null;
 let keys: SessionKeys | null = null;
@@ -231,36 +236,92 @@ function handle(msg: ServerMessage): void {
 
 // ---- pairing UI -----------------------------------------------------------
 
+async function pairWithCode(code: string, relayOverride?: string): Promise<void> {
+  await ready;
+  const relayUrl = (relayOverride?.trim() || DEFAULT_RELAY_URL).replace(/\/$/, '');
+  const { token, daemonPublicKey } = decodePairingCode(code.trim());
+  const phone = generateKeyPair();
+  const res = await fetch(`${relayUrl}/pair/${encodeURIComponent(token)}/answer`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ phonePublicKey: toB64u(phone.publicKey) }),
+  });
+  if (!res.ok) throw new Error(`relay said ${res.status} — is the daemon waiting to pair?`);
+  const pairing: StoredPairing = {
+    relayUrl,
+    phonePublicKey: toB64u(phone.publicKey),
+    phoneSecretKey: toB64u(phone.secretKey),
+    daemonPublicKey: toB64u(daemonPublicKey),
+  };
+  localStorage.setItem(PAIRING_KEY, JSON.stringify(pairing));
+  pairingEl.style.display = 'none';
+  await setupFromPairing(pairing);
+  connect();
+}
+
 pairForm.addEventListener('submit', (e) => {
   e.preventDefault();
   void (async () => {
     pairErrorEl.textContent = '';
     try {
-      await ready;
-      const relayUrl = pairRelayInput.value.trim().replace(/\/$/, '');
-      const { token, daemonPublicKey } = decodePairingCode(pairCodeInput.value.trim());
-      const phone = generateKeyPair();
-      const res = await fetch(`${relayUrl}/pair/${encodeURIComponent(token)}/answer`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ phonePublicKey: toB64u(phone.publicKey) }),
-      });
-      if (!res.ok) throw new Error(`relay said ${res.status} — is the daemon waiting to pair?`);
-      const pairing: StoredPairing = {
-        relayUrl,
-        phonePublicKey: toB64u(phone.publicKey),
-        phoneSecretKey: toB64u(phone.secretKey),
-        daemonPublicKey: toB64u(daemonPublicKey),
-      };
-      localStorage.setItem(PAIRING_KEY, JSON.stringify(pairing));
-      pairingEl.style.display = 'none';
-      await setupFromPairing(pairing);
-      connect();
+      await pairWithCode(pairCodeInput.value, pairRelayInput.value);
     } catch (err) {
       pairErrorEl.textContent = err instanceof Error ? err.message : String(err);
     }
   })();
 });
+
+// ---- settings + A2HS -------------------------------------------------------
+
+document.getElementById('settings-btn')!.addEventListener('click', () => {
+  const showing = settingsEl.style.display !== 'none';
+  settingsEl.style.display = showing ? 'none' : 'block';
+  if (!showing) {
+    const p = loadPairing();
+    settingsInfoEl.innerHTML = '';
+    const rows: [string, string][] = p
+      ? [
+          ['E2E fingerprint (must match daemon)', sas || '—'],
+          ['Session', sessionIdForBlobs || '—'],
+          ['Relay', p.relayUrl],
+          ['Installed as app', isStandalone() ? 'yes' : 'no — use Add to Home Screen for notifications'],
+        ]
+      : [['Pairing', 'not paired']];
+    for (const [dt, dd] of rows) {
+      const dtEl = document.createElement('dt');
+      dtEl.textContent = dt;
+      const ddEl = document.createElement('dd');
+      ddEl.textContent = dd;
+      settingsInfoEl.append(dtEl, ddEl);
+    }
+  }
+});
+
+document.getElementById('unpair')!.addEventListener('click', () => {
+  if (!confirm('Unpair this device? You will need to re-scan a pairing code.')) return;
+  localStorage.removeItem(PAIRING_KEY);
+  location.href = location.pathname; // drop any #pair hash and reload
+});
+
+function isStandalone(): boolean {
+  return (
+    window.matchMedia('(display-mode: standalone)').matches ||
+    (navigator as unknown as { standalone?: boolean }).standalone === true
+  );
+}
+
+function isIOS(): boolean {
+  return /iphone|ipad|ipod/i.test(navigator.userAgent);
+}
+
+function maybeShowA2HSHint(): void {
+  if (!isIOS() || isStandalone() || localStorage.getItem(A2HS_DISMISSED_KEY)) return;
+  a2hsHintEl.style.display = 'block';
+  document.getElementById('a2hs-dismiss')!.addEventListener('click', () => {
+    localStorage.setItem(A2HS_DISMISSED_KEY, '1');
+    a2hsHintEl.style.display = 'none';
+  });
+}
 
 form.addEventListener('submit', (e) => {
   e.preventDefault();
@@ -344,10 +405,33 @@ function escapeHtml(s: string): string {
 // ---- boot -----------------------------------------------------------------
 
 void (async () => {
+  maybeShowA2HSHint();
   if (localMode) {
     connect();
     return;
   }
+
+  // Scan-to-pair: the daemon's QR encodes /#pair=<code>&relay=<url>.
+  const hashParams = new URLSearchParams(location.hash.replace(/^#/, ''));
+  const hashCode = hashParams.get('pair');
+  if (hashCode) {
+    history.replaceState(null, '', location.pathname); // never keep the code in history
+    const hashRelay = hashParams.get('relay') ?? undefined;
+    const existing = loadPairing();
+    if (!existing || confirm('Already paired. Replace the existing pairing with the scanned one?')) {
+      setStatus('pairing…');
+      try {
+        await pairWithCode(hashCode, hashRelay);
+        return;
+      } catch (err) {
+        setStatus('not paired');
+        pairingEl.style.display = 'block';
+        pairErrorEl.textContent = err instanceof Error ? err.message : String(err);
+        return;
+      }
+    }
+  }
+
   const stored = loadPairing();
   if (stored) {
     await setupFromPairing(stored);

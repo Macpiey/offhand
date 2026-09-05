@@ -32,6 +32,7 @@ const relayUrl = argValue('--relay');
 const forceRepair = args.includes('--repair');
 const approvalTimeoutMs = Number(argValue('--approval-timeout') ?? 300) * 1000;
 const captureUrl = argValue('--capture-url');
+const webUrl = argValue('--web-url') ?? 'https://offhand-web.onrender.com';
 
 if (!existsSync(workspace)) {
   console.error(`workspace does not exist: ${workspace}`);
@@ -62,7 +63,7 @@ console.log(`  local     : ws://127.0.0.1:${port}`);
 console.log(`  approvals : timeout ${approvalTimeoutMs / 1000}s then auto-deny`);
 
 if (relayUrl) {
-  const pairing = await ensurePairing(relayUrl, forceRepair);
+  const pairing = await ensurePairing(relayUrl, forceRepair, webUrl);
   new RelayClient(core, relayUrl, pairing.sessionId, pairing.keys).start();
   console.log(`  relay     : ${relayUrl}`);
   console.log(`  session   : ${pairing.sessionId}`);
