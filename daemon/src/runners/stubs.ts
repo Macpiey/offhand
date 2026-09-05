@@ -33,12 +33,36 @@ function notImplemented(id: string): RunHandle {
 
 export class CopilotCliRunner implements AgentRunner {
   readonly id = 'copilot-cli';
+  readonly name = 'GitHub Copilot CLI';
+  readonly models: string[] = [];
+  readonly supportsApprovals = false;
   detect = () => commandExists('copilot');
   start = (_run: RunSpec) => notImplemented(this.id);
 }
 
 export class CodexCliRunner implements AgentRunner {
   readonly id = 'codex-cli';
+  readonly name = 'OpenAI Codex CLI';
+  readonly models: string[] = [];
+  readonly supportsApprovals = false;
   detect = () => commandExists('codex');
+  start = (_run: RunSpec) => notImplemented(this.id);
+}
+
+export class CursorAgentRunner implements AgentRunner {
+  readonly id = 'cursor-agent';
+  readonly name = 'Cursor';
+  readonly models: string[] = [];
+  readonly supportsApprovals = false;
+  detect = () => commandExists('cursor-agent');
+  start = (_run: RunSpec) => notImplemented(this.id);
+}
+
+export class GeminiCliRunner implements AgentRunner {
+  readonly id = 'gemini-cli';
+  readonly name = 'Gemini CLI';
+  readonly models: string[] = [];
+  readonly supportsApprovals = false;
+  detect = () => commandExists('gemini');
   start = (_run: RunSpec) => notImplemented(this.id);
 }

@@ -9,17 +9,15 @@ import {
   type ServerMessage,
   type SessionKeys,
 } from '@offhand/shared';
-import type { SessionCore } from './session-core.js';
+import type { SessionManager } from './session-manager.js';
 
-const HEARTBEAT_MS = 30_000; // POC risk #3: free-tier WS idle timeouts
+const HEARTBEAT_MS = 30_000; // free-tier WS idle timeouts
 const MAX_BACKOFF_MS = 30_000;
 
 /**
- * M2/M3 transport: outbound-only WSS to the relay (never an inbound port —
- * key architecture property). Every peer payload is an E2E-encrypted
- * envelope (M3): seal with our tx key, open with our rx key. The relay
- * forwards ciphertext it cannot read. Reconnects forever with exponential
- * backoff; the phone replays via `resume` after gaps.
+ * Relay transport: outbound-only WSS (never an inbound port). Every peer
+ * payload is an E2E-encrypted envelope. Approval events additionally trigger
+ * a content-free push nudge. Reconnects forever with exponential backoff.
  */
 export class RelayClient {
   private ws: WebSocket | null = null;
@@ -29,7 +27,7 @@ export class RelayClient {
   private stopped = false;
 
   constructor(
-    private readonly core: SessionCore,
+    private readonly manager: SessionManager,
     private readonly relayUrl: string,
     private readonly sessionId: string,
     private readonly keys: SessionKeys,
@@ -75,8 +73,9 @@ export class RelayClient {
     ws.on('open', () => {
       this.backoffMs = 500;
       console.log(`relay: connected (${this.relayUrl})`);
-      this.detach = this.core.attach(send);
-      send(this.core.hello());
+      this.detach = this.manager.attach(send);
+      send(this.manager.hello());
+      void this.manager.manifest().then(send);
       this.heartbeat = setInterval(() => {
         if (ws.readyState === WebSocket.OPEN) {
           ws.send(JSON.stringify({ kind: 'ping' } satisfies RelayFrame));
@@ -93,8 +92,8 @@ export class RelayClient {
       }
       if (frame.kind === 'verdict') {
         // Verdict from a push-notification action button (opaque ids).
-        this.core.handle(
-          { type: 'approval-response', runId: '', approvalId: frame.approvalId, approve: frame.approve },
+        this.manager.handle(
+          { type: 'approval-response', approvalId: frame.approvalId, approve: frame.approve },
           send,
         );
         return;
@@ -103,7 +102,7 @@ export class RelayClient {
       try {
         const envelope = EnvelopeSchema.parse(frame.payload);
         const decrypted = open(envelope, this.keys.rx);
-        this.core.handle(parseClientMessage(JSON.stringify(decrypted)), send);
+        this.manager.handle(parseClientMessage(JSON.stringify(decrypted)), send);
       } catch {
         // Undecryptable or malformed peer payload is dropped, never fatal —
         // wrong-key traffic (stale phone, attacker) simply goes nowhere.

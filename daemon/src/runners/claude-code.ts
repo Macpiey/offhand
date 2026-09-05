@@ -4,7 +4,7 @@ import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { RunEvent, RunSpec } from '@offhand/shared';
+import type { RunEvent, RunSpec, RunCallbacks } from '@offhand/shared';
 import type { AgentRunner, RunHandle } from '../runner.js';
 import { NdjsonParser } from '../ndjson.js';
 import { mapClaudeEvent } from './claude-map.js';
@@ -16,24 +16,26 @@ const APPROVAL_MCP_PATH = join(dirname(fileURLToPath(import.meta.url)), '..', 'a
 /**
  * Claude Code headless runner. Flags verified against CLI v2.1.261:
  *   claude -p <prompt> --output-format stream-json --verbose
- *          --include-partial-messages
+ *          --include-partial-messages [--model <m>] [--resume <conversation>]
  *
- * M4: permission prompts route through our MCP prompt tool
- * (--permission-prompt-tool mcp__offhand__approval_prompt) → daemon HTTP →
- * encrypted approval event → phone → verdict → run continues. Without a
- * broker (localhost debug), falls back to --permission-mode acceptEdits.
+ * Approvals route through our MCP prompt tool when a broker is present;
+ * conversation continuity is session-scoped via RunSpec.resumeConversationId
+ * (the CLI's session_id is reported back through RunCallbacks).
  */
 export class ClaudeCodeRunner implements AgentRunner {
   readonly id = 'claude-code';
-
-  /** Claude session id of the last run — chained via --resume so follow-up
-   * prompts share one conversation instead of stateless one-shots. */
-  private lastSessionId: string | null = null;
+  readonly name = 'Claude Code';
+  readonly models = ['sonnet', 'opus', 'haiku'];
+  readonly supportsApprovals = true;
 
   constructor(
     private readonly broker?: ApprovalBroker,
     private readonly approvalUrl?: string,
   ) {}
+
+  loggedIn(): boolean {
+    return existsSync(join(homedir(), '.claude', '.credentials.json'));
+  }
 
   /** Resolution order: $OFFHAND_CLAUDE_BIN → PATH → native-install default. */
   resolveBin(): string {
@@ -51,12 +53,13 @@ export class ClaudeCodeRunner implements AgentRunner {
     });
   }
 
-  start(run: RunSpec): RunHandle {
+  start(run: RunSpec, callbacks?: RunCallbacks): RunHandle {
     const queue = new AsyncEventQueue<RunEvent>();
     const parser = new NdjsonParser();
     let child: ChildProcessByStdio<null, Readable, Readable>;
     let stderrTail = '';
     let sawTerminal = false;
+    let reportedConversation = false;
 
     const emit = (events: RunEvent[]) => {
       for (const e of events) {
@@ -69,10 +72,8 @@ export class ClaudeCodeRunner implements AgentRunner {
     // Without: acceptEdits keeps local debugging unattended.
     const detachBroker = this.broker?.attach((ev) => queue.push(ev));
     const args = ['-p', run.prompt, '--output-format', 'stream-json', '--verbose', '--include-partial-messages'];
-    if (this.lastSessionId) {
-      // Continue the same conversation: "make it bigger" keeps meaning.
-      args.push('--resume', this.lastSessionId);
-    }
+    if (run.model) args.push('--model', run.model);
+    if (run.resumeConversationId) args.push('--resume', run.resumeConversationId);
     if (this.broker && this.approvalUrl) {
       const mcpConfig = {
         mcpServers: {
@@ -108,7 +109,13 @@ export class ClaudeCodeRunner implements AgentRunner {
     child.stdout.on('data', (chunk: string) => {
       for (const result of parser.push(chunk)) {
         if (result.ok) {
-          this.captureSessionId(result.value);
+          if (!reportedConversation) {
+            const id = extractSessionId(result.value);
+            if (id) {
+              reportedConversation = true;
+              callbacks?.onConversationId?.(id);
+            }
+          }
           emit(mapClaudeEvent(result.value));
         }
         // Malformed lines are swallowed (never fatal); format churn shows up
@@ -154,12 +161,10 @@ export class ClaudeCodeRunner implements AgentRunner {
       cancel: () => child.kill(),
     };
   }
+}
 
-  private captureSessionId(value: unknown): void {
-    if (typeof value !== 'object' || value === null) return;
-    const v = value as Record<string, unknown>;
-    if (typeof v.session_id === 'string' && v.session_id !== '') {
-      this.lastSessionId = v.session_id;
-    }
-  }
+function extractSessionId(value: unknown): string | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const v = value as Record<string, unknown>;
+  return typeof v.session_id === 'string' && v.session_id !== '' ? v.session_id : null;
 }

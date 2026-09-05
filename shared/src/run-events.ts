@@ -34,5 +34,15 @@ export const RunSpecSchema = z.object({
   prompt: z.string().min(1),
   /** Absolute path of the workspace the agent runs in. */
   workspace: z.string(),
+  /** Model override (CLI-specific id/alias); omit = CLI default. */
+  model: z.string().optional(),
+  /** Agent-side conversation id to resume (continuity across runs). */
+  resumeConversationId: z.string().optional(),
 });
 export type RunSpec = z.infer<typeof RunSpecSchema>;
+
+/** Callback surface for runner-internal metadata (not user events). */
+export interface RunCallbacks {
+  /** Fired when the agent CLI reveals its conversation/session id. */
+  onConversationId?: (id: string) => void;
+}

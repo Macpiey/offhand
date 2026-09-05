@@ -17,6 +17,7 @@ import {
   type ClientMessage,
   type ServerMessage,
   type SessionKeys,
+  type Receipt,
 } from '@offhand/shared';
 
 /**
@@ -62,6 +63,92 @@ let lastSeq = 0;
 let retryMs = 500;
 let lastMessageAt = 0;
 let textSpan: HTMLElement | null = null; // current streaming text node
+let currentSessionId = localStorage.getItem('offhand.currentSession') ?? '';
+let manifestSessions: { id: string; label: string; archived: boolean }[] = [];
+let manifestDefaults: { workspace: string; runnerId: string } | null = null;
+let creatingSession = false;
+
+type ManifestMsg = Extract<ServerMessage, { type: 'manifest' }>;
+
+function onManifest(msg: ManifestMsg): void {
+  manifestSessions = msg.sessions.map((s) => ({ id: s.id, label: s.label, archived: s.archived }));
+  const firstWorkspace = msg.workspaces[0];
+  const firstRunner = msg.runners.find((r) => r.available);
+  manifestDefaults =
+    firstWorkspace && firstRunner ? { workspace: firstWorkspace.path, runnerId: firstRunner.id } : null;
+
+  const live = manifestSessions.filter((s) => !s.archived);
+  if (live.length === 0) {
+    // Bootstrap the first session automatically.
+    if (manifestDefaults && !creatingSession) {
+      creatingSession = true;
+      sendToDaemon({ type: 'session-create', ...manifestDefaults });
+    }
+    return;
+  }
+  creatingSession = false;
+  if (!live.some((s) => s.id === currentSessionId)) switchSession(live[0]!.id);
+  renderSessionSelect(live);
+}
+
+function renderSessionSelect(live: { id: string; label: string }[]): void {
+  const sel = document.getElementById('session-select') as HTMLSelectElement;
+  sel.innerHTML = '';
+  for (const s of live) {
+    const opt = document.createElement('option');
+    opt.value = s.id;
+    opt.textContent = s.label;
+    opt.selected = s.id === currentSessionId;
+    sel.appendChild(opt);
+  }
+}
+
+function switchSession(id: string): void {
+  currentSessionId = id;
+  localStorage.setItem('offhand.currentSession', id);
+  transcriptEl.innerHTML = '';
+  approvalCards.clear();
+  textSpan = null;
+  lastSeq = 0; // re-replay the whole log, filtered to this session
+  sendToDaemon({ type: 'resume', afterSeq: 0 });
+}
+
+document.getElementById('session-select')!.addEventListener('change', (e) => {
+  switchSession((e.target as HTMLSelectElement).value);
+});
+
+document.getElementById('new-session')!.addEventListener('click', () => {
+  if (manifestDefaults) sendToDaemon({ type: 'session-create', ...manifestDefaults });
+});
+
+function renderReceipt(receipt: Receipt): void {
+  const box = document.createElement('div');
+  box.className = 'receipt' + (receipt.ok ? '' : ' fail');
+  const secs = Math.round(receipt.durationMs / 1000);
+  const head = document.createElement('div');
+  head.textContent = `${receipt.ok ? '✔' : '✖'} ${secs}s · ${receipt.toolCount} actions · ${
+    receipt.filesChanged > 0
+      ? `${receipt.filesChanged} files +${receipt.additions} −${receipt.deletions}`
+      : 'no file changes'
+  }`;
+  box.appendChild(head);
+  if (receipt.diff) {
+    const details = document.createElement('details');
+    const summary = document.createElement('summary');
+    summary.textContent = 'view diff';
+    const pre = document.createElement('pre');
+    pre.textContent = receipt.diff;
+    details.append(summary, pre);
+    box.appendChild(details);
+  }
+  if (receipt.screenshotBlobId) {
+    const holder = document.createElement('div');
+    box.appendChild(holder);
+    void loadArtifactInto(holder, receipt.screenshotBlobId, 'image/png', 'screenshot');
+  }
+  transcriptEl.appendChild(box);
+  transcriptEl.scrollTop = transcriptEl.scrollHeight;
+}
 
 function loadPairing(): StoredPairing | null {
   const raw = localStorage.getItem(PAIRING_KEY);
@@ -218,15 +305,32 @@ function handle(msg: ServerMessage): void {
   switch (msg.type) {
     case 'hello':
       setStatus(
-        `<span class="ok">●</span> ${escapeHtml(msg.workspace)} · runner: ${msg.runner} ` +
-          (msg.runnerAvailable ? '<span class="ok">available</span>' : '<span class="bad">NOT FOUND</span>') +
-          (keys ? ` · E2E 🔒 ${sas}` : ''),
+        `<span class="ok">●</span> ${escapeHtml(msg.host.hostname)} · daemon ${msg.host.daemonVersion}` +
+          (keys ? ` · E2E 🔒 ${sas}` : ' (local)'),
       );
       if (lastSeq > 0) sendToDaemon({ type: 'resume', afterSeq: lastSeq });
       return;
+    case 'manifest':
+      onManifest(msg);
+      return;
+    case 'history-response':
+    case 'search-response':
+      return; // W3 UI consumes these; ignored in the bare page
+    case 'error':
+      appendLine('err', `✖ ${msg.message}`);
+      return;
+    case 'receipt': {
+      if (msg.seq <= lastSeq) return;
+      lastSeq = msg.seq;
+      if (msg.sessionId !== currentSessionId) return;
+      textSpan = null;
+      renderReceipt(msg.receipt);
+      return;
+    }
     case 'run-started':
       if (msg.seq <= lastSeq) return;
       lastSeq = msg.seq;
+      if (msg.sessionId !== currentSessionId) return;
       textSpan = null;
       appendLine('you', `❯ ${msg.prompt}`);
       appendLine('run', `▶ run ${msg.runId.slice(0, 8)}`);
@@ -234,6 +338,7 @@ function handle(msg: ServerMessage): void {
     case 'run-event': {
       if (msg.seq <= lastSeq) return; // replay dedupe
       lastSeq = msg.seq;
+      if (msg.sessionId !== currentSessionId) return;
       const ev = msg.event;
       switch (ev.type) {
         case 'text':
@@ -249,7 +354,7 @@ function handle(msg: ServerMessage): void {
           break;
         case 'approval':
           textSpan = null;
-          renderApproval(msg.runId, ev.id, ev.action, ev.detail, ev.risk);
+          renderApproval(ev.id, ev.action, ev.detail, ev.risk);
           break;
         case 'approval-result':
           resolveApprovalCard(ev.id, ev.approve);
@@ -441,41 +546,50 @@ function maybeShowA2HSHint(): void {
 form.addEventListener('submit', (e) => {
   e.preventDefault();
   const prompt = promptInput.value.trim();
-  if (!prompt || !ws || ws.readyState !== WebSocket.OPEN) return;
-  sendToDaemon({ type: 'prompt', prompt });
+  if (!prompt || !ws || ws.readyState !== WebSocket.OPEN || !currentSessionId) return;
+  sendToDaemon({ type: 'prompt', sessionId: currentSessionId, prompt });
   promptInput.value = '';
 });
 
 function renderArtifact(blobId: string, contentHint: string, label: string): void {
-  if (!keys || !relayHttpUrl) {
-    appendLine('tool', `📎 artifact: ${label} (relay mode required to view)`);
-    return;
-  }
   const holder = document.createElement('div');
   holder.className = 'artifact';
-  holder.textContent = `📎 fetching ${label}…`;
   transcriptEl.appendChild(holder);
-  void (async () => {
-    try {
-      const res = await fetch(`${relayHttpUrl}/artifacts/${encodeURIComponent(sessionIdForBlobs)}/${encodeURIComponent(blobId)}`);
-      if (!res.ok) throw new Error(`fetch ${res.status}`);
-      const encrypted = new Uint8Array(await res.arrayBuffer());
-      const data = openBytes(encrypted, keys!.rx); // decrypt locally — relay never sees pixels
-      if (contentHint.startsWith('image/')) {
-        const url = URL.createObjectURL(new Blob([data.slice().buffer], { type: contentHint }));
-        holder.textContent = '';
-        const img = document.createElement('img');
-        img.src = url;
-        img.alt = label;
-        holder.appendChild(img);
-      } else {
-        holder.textContent = `📎 ${label} (${data.length} bytes, ${contentHint})`;
-      }
-      transcriptEl.scrollTop = transcriptEl.scrollHeight;
-    } catch (e) {
-      holder.textContent = `📎 ${label} — failed to load (${e instanceof Error ? e.message : e})`;
+  void loadArtifactInto(holder, blobId, contentHint, label);
+}
+
+async function loadArtifactInto(
+  holder: HTMLElement,
+  blobId: string,
+  contentHint: string,
+  label: string,
+): Promise<void> {
+  if (!keys || !relayHttpUrl) {
+    holder.textContent = `📎 artifact: ${label} (relay mode required to view)`;
+    return;
+  }
+  holder.textContent = `📎 fetching ${label}…`;
+  try {
+    const res = await fetch(
+      `${relayHttpUrl}/artifacts/${encodeURIComponent(sessionIdForBlobs)}/${encodeURIComponent(blobId)}`,
+    );
+    if (!res.ok) throw new Error(`fetch ${res.status}`);
+    const encrypted = new Uint8Array(await res.arrayBuffer());
+    const data = openBytes(encrypted, keys.rx); // decrypt locally — relay never sees pixels
+    if (contentHint.startsWith('image/')) {
+      const url = URL.createObjectURL(new Blob([data.slice().buffer], { type: contentHint }));
+      holder.textContent = '';
+      const img = document.createElement('img');
+      img.src = url;
+      img.alt = label;
+      holder.appendChild(img);
+    } else {
+      holder.textContent = `📎 ${label} (${data.length} bytes, ${contentHint})`;
     }
-  })();
+    transcriptEl.scrollTop = transcriptEl.scrollHeight;
+  } catch (e) {
+    holder.textContent = `📎 ${label} — failed to load (${e instanceof Error ? e.message : e})`;
+  }
 }
 
 function appendLine(cls: string, text: string): void {
@@ -487,7 +601,7 @@ function appendLine(cls: string, text: string): void {
 
 const approvalCards = new Map<string, { label: HTMLElement; buttons: HTMLElement }>();
 
-function renderApproval(runId: string, approvalId: string, action: string, detail: string, risk: 'low' | 'high'): void {
+function renderApproval(approvalId: string, action: string, detail: string, risk: 'low' | 'high'): void {
   const box = document.createElement('div');
   box.className = 'approval' + (risk === 'high' ? ' high' : '');
   const label = document.createElement('div');
@@ -499,7 +613,7 @@ function renderApproval(runId: string, approvalId: string, action: string, detai
     b.textContent = text;
     b.className = cls;
     b.onclick = () => {
-      sendToDaemon({ type: 'approval-response', runId, approvalId, approve });
+      sendToDaemon({ type: 'approval-response', approvalId, approve });
       resolveApprovalCard(approvalId, approve);
     };
     return b;

@@ -1,20 +1,20 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { WebSocketServer, WebSocket } from 'ws';
 import { parseClientMessage, type ServerMessage } from '@offhand/shared';
-import type { SessionCore } from './session-core.js';
+import type { SessionManager } from './session-manager.js';
 import type { ApprovalBroker } from './approvals.js';
 
 /**
  * Daemon-local server: one 127.0.0.1 port carrying
- *  - WS: the M1 localhost transport for the browser page
+ *  - WS: localhost transport for debugging (plaintext, local only)
  *  - POST /approval: the claude MCP prompt tool submits permission requests
- *    here and long-polls the verdict (M4). Localhost-only by construction.
+ *    here and long-polls the verdict. Localhost-only by construction.
  */
 export class LocalSessionServer {
   private wss: WebSocketServer;
 
   constructor(
-    private readonly core: SessionCore,
+    private readonly manager: SessionManager,
     port: number,
     private readonly broker?: ApprovalBroker,
   ) {
@@ -51,12 +51,13 @@ export class LocalSessionServer {
     const send = (msg: ServerMessage) => {
       if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
     };
-    const detach = this.core.attach(send);
-    send(this.core.hello());
+    const detach = this.manager.attach(send);
+    send(this.manager.hello());
+    void this.manager.manifest().then(send);
 
     ws.on('message', (raw) => {
       try {
-        this.core.handle(parseClientMessage(raw.toString()), send);
+        this.manager.handle(parseClientMessage(raw.toString()), send);
       } catch {
         // Malformed client input is dropped, never fatal.
       }

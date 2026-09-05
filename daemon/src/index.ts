@@ -1,43 +1,58 @@
 import { resolve } from 'node:path';
 import { existsSync } from 'node:fs';
 import { ClaudeCodeRunner } from './runners/claude-code.js';
-import { CopilotCliRunner, CodexCliRunner } from './runners/stubs.js';
-import { SessionCore } from './session-core.js';
+import {
+  CopilotCliRunner,
+  CodexCliRunner,
+  CursorAgentRunner,
+  GeminiCliRunner,
+} from './runners/stubs.js';
+import { SessionManager } from './session-manager.js';
+import { Store } from './store.js';
 import { LocalSessionServer } from './local-server.js';
 import { RelayClient } from './relay-client.js';
 import { ensurePairing } from './pairing.js';
 import { ApprovalBroker } from './approvals.js';
+import { captureScreenshot, uploadArtifact } from './capture.js';
 
 /**
- * offhand daemon entry point.
- *   pnpm daemon -- --workspace <path> [--port 4317]
- *                  [--relay <url>] [--repair]
- *                  [--approval-timeout <seconds>]  (default 300)
+ * offhand daemon entry point (v1).
+ *   pnpm daemon -- [--workspace <path>]... [--dev-url <url>] [--port 4317]
+ *                  [--relay <url>] [--repair] [--approval-timeout <seconds>]
+ *                  [--web-url <url>]
  *
- * Relay mode (M3): pairing = X25519 key exchange; every payload E2E
- * encrypted; the session id is derived from the daemon's public key.
- * `--repair` discards the stored pairing and prints a fresh pairing code.
- * Approvals (M4): claude permission prompts route to the phone; unanswered
- * requests auto-deny after the timeout.
+ * Workspaces are registered into the local store (~/.offhand); sessions,
+ * transcripts, and search live there too. The relay stores nothing.
  */
 const args = process.argv.slice(2);
-function argValue(flag: string): string | undefined {
-  const i = args.indexOf(flag);
-  return i !== -1 ? args[i + 1] : undefined;
+function argValues(flag: string): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === flag && args[i + 1]) out.push(args[i + 1]!);
+  }
+  return out;
 }
+const argValue = (flag: string): string | undefined => argValues(flag)[0];
 
-const workspace = resolve(argValue('--workspace') ?? process.cwd());
 const port = Number(argValue('--port') ?? 4317);
 const relayUrl = argValue('--relay');
 const forceRepair = args.includes('--repair');
 const approvalTimeoutMs = Number(argValue('--approval-timeout') ?? 300) * 1000;
-const captureUrl = argValue('--capture-url');
 const webUrl = argValue('--web-url') ?? 'https://offhand-web.onrender.com';
+const devUrl = argValue('--dev-url');
 
-if (!existsSync(workspace)) {
-  console.error(`workspace does not exist: ${workspace}`);
-  process.exit(1);
+const store = new Store();
+
+// Register workspaces from flags (or cwd on first ever run).
+const wsArgs = argValues('--workspace').map((w) => resolve(w));
+for (const w of wsArgs) {
+  if (!existsSync(w)) {
+    console.error(`workspace does not exist: ${w}`);
+    process.exit(1);
+  }
+  store.upsertWorkspace(w, wsArgs[0] === w ? devUrl : undefined);
 }
+if (store.listWorkspaces().length === 0) store.upsertWorkspace(process.cwd(), devUrl);
 
 const broker = new ApprovalBroker(approvalTimeoutMs);
 const approvalUrl = `http://127.0.0.1:${port}/approval`;
@@ -45,38 +60,35 @@ const runners = [
   new ClaudeCodeRunner(broker, approvalUrl),
   new CopilotCliRunner(),
   new CodexCliRunner(),
+  new CursorAgentRunner(),
+  new GeminiCliRunner(),
 ];
 
-console.log(`offhand daemon`);
-console.log(`  workspace : ${workspace}`);
-let primaryAvailable = false;
-for (const r of runners) {
-  const ok = await r.detect();
-  if (r === runners[0]) primaryAvailable = ok;
-  console.log(`  runner    : ${r.id.padEnd(11)} ${ok ? 'available' : 'not found'}`);
+const manager = new SessionManager(store, runners);
+await manager.init();
+
+console.log(`offhand daemon v1`);
+for (const w of store.listWorkspaces()) {
+  console.log(`  workspace : ${w.path}${w.devUrl ? `  (dev: ${w.devUrl})` : ''}`);
+}
+const m = await manager.manifest();
+if (m.type === 'manifest') {
+  for (const r of m.runners) {
+    console.log(`  runner    : ${r.id.padEnd(12)} ${r.available ? 'available' : 'not found'}`);
+  }
 }
 
-const core = new SessionCore(runners[0]!, workspace, primaryAvailable);
-
-new LocalSessionServer(core, port, broker);
+new LocalSessionServer(manager, port, broker);
 console.log(`  local     : ws://127.0.0.1:${port}`);
 console.log(`  approvals : timeout ${approvalTimeoutMs / 1000}s then auto-deny`);
 
 if (relayUrl) {
   const pairing = await ensurePairing(relayUrl, forceRepair, webUrl);
-  new RelayClient(core, relayUrl, pairing.sessionId, pairing.keys).start();
+  manager.capture = captureScreenshot;
+  manager.uploader = (data, hint) =>
+    uploadArtifact(relayUrl, pairing.sessionId, data, pairing.keys, hint);
+  new RelayClient(manager, relayUrl, pairing.sessionId, pairing.keys).start();
   console.log(`  relay     : ${relayUrl}`);
   console.log(`  session   : ${pairing.sessionId}`);
   console.log(`  E2E SAS   : ${pairing.sas}  (must match the phone)`);
-
-  if (captureUrl) {
-    // M5: screenshot after every successful run — encrypted before upload.
-    const { captureScreenshot, uploadArtifact } = await import('./capture.js');
-    core.afterRun = async (runId) => {
-      const png = await captureScreenshot(captureUrl);
-      const blobId = await uploadArtifact(relayUrl, pairing.sessionId, png, pairing.keys, 'image/png');
-      core.emitArtifact(runId, blobId, 'image/png', `screenshot of ${captureUrl}`);
-    };
-    console.log(`  capture   : ${captureUrl} (after each successful run)`);
-  }
 }
