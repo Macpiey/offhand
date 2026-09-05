@@ -16,7 +16,10 @@ self.addEventListener('push', (event) => {
   event.waitUntil(
     self.registration.showNotification('offhand — approval waiting', {
       body: 'Your agent is paused on a permission request.',
-      tag: `approval-${data.approvalId}`,
+      // Constant tag: repeated approval pushes replace the previous
+      // notification instead of stacking (founder friction 2026-09-05).
+      tag: 'offhand-approval',
+      renotify: true,
       requireInteraction: true,
       data,
       actions: [
