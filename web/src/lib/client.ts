@@ -101,7 +101,10 @@ export async function boot(): Promise<void> {
 
 export async function pairWithCode(code: string, relayOverride?: string): Promise<void> {
   await ready;
-  const relayUrl = (relayOverride?.trim() || DEFAULT_RELAY_URL).replace(/\/$/, '');
+  // QR links may carry the relay as ws(s):// — store the http(s) form.
+  const relayUrl = (relayOverride?.trim() || DEFAULT_RELAY_URL)
+    .replace(/^ws(s?):\/\//, 'http$1://')
+    .replace(/\/$/, '');
   const { token, daemonPublicKey } = decodePairingCode(code.trim());
   const phone = generateKeyPair();
   const res = await fetch(`${relayUrl}/pair/${encodeURIComponent(token)}/answer`, {
@@ -129,8 +132,9 @@ async function setupFromPairing(p: StoredPairing): Promise<void> {
   keys = derivePhoneKeys(phone, daemonPk);
   const sas = fingerprint(daemonPk, phone.publicKey);
   blobSession = sessionIdFromDaemonKey(daemonPk);
-  relayHttpUrl = p.relayUrl.replace(/\/$/, '');
-  wsUrl = `${p.relayUrl.replace(/^http/, 'ws').replace(/\/$/, '')}/ws?session=${encodeURIComponent(blobSession)}&role=phone`;
+  const base = p.relayUrl.replace(/^ws(s?):\/\//, 'http$1://').replace(/\/$/, '');
+  relayHttpUrl = base;
+  wsUrl = `${base.replace(/^http/, 'ws')}/ws?session=${encodeURIComponent(blobSession)}&role=phone`;
   conn.update((c) => ({ ...c, sas, phase: 'connecting' }));
   const { setupPush } = await import('./push.js');
   void setupPush(relayHttpUrl, blobSession);

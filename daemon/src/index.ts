@@ -31,7 +31,8 @@ function argValues(flag: string): string[] {
 const argValue = (flag: string): string | undefined => argValues(flag)[0];
 
 const port = Number(argValue('--port') ?? 4317);
-const relayUrl = argValue('--relay');
+// Accept ws(s):// too — everything downstream expects the http(s) form.
+const relayUrl = argValue('--relay')?.replace(/^ws(s?):\/\//, 'http$1://');
 const forceRepair = args.includes('--repair');
 const approvalTimeoutMs = Number(argValue('--approval-timeout') ?? 300) * 1000;
 const webUrl = argValue('--web-url') ?? 'https://offhand-web.onrender.com';
