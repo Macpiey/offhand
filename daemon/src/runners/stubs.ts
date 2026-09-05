@@ -1,0 +1,44 @@
+import { spawn } from 'node:child_process';
+import type { RunSpec } from '@offhand/shared';
+import type { AgentRunner, RunHandle } from '../runner.js';
+import { AsyncEventQueue } from '../async-queue.js';
+
+/**
+ * Honest stubs (03-poc-scope.md): detect() genuinely checks the CLI exists;
+ * start() states plainly that the runner isn't implemented yet. They must
+ * never pretend to work.
+ */
+function commandExists(bin: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const p = spawn(bin, ['--version'], { stdio: 'ignore', shell: process.platform === 'win32' });
+    p.on('error', () => resolve(false));
+    p.on('exit', (code) => resolve(code === 0));
+  });
+}
+
+function notImplemented(id: string): RunHandle {
+  const queue = new AsyncEventQueue<never>();
+  queue.close();
+  return {
+    events: (async function* () {
+      yield {
+        type: 'error' as const,
+        message: `${id} runner is not implemented yet (POC ships Claude Code only).`,
+      };
+    })(),
+    respond: () => {},
+    cancel: () => {},
+  };
+}
+
+export class CopilotCliRunner implements AgentRunner {
+  readonly id = 'copilot-cli';
+  detect = () => commandExists('copilot');
+  start = (_run: RunSpec) => notImplemented(this.id);
+}
+
+export class CodexCliRunner implements AgentRunner {
+  readonly id = 'codex-cli';
+  detect = () => commandExists('codex');
+  start = (_run: RunSpec) => notImplemented(this.id);
+}

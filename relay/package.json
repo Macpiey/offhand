@@ -1,0 +1,7 @@
+{
+  "name": "@offhand/relay",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Cloud relay — intentionally empty until M2 (03-poc-scope.md build order). M1 is localhost-only by design."
+}

@@ -1,0 +1,23 @@
+{
+  "name": "offhand",
+  "private": true,
+  "version": "0.0.1",
+  "packageManager": "pnpm@11.25.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "devEngines": {
+    "runtime": {
+      "name": "node",
+      "version": "^22.23.2",
+      "onFail": "download"
+    }
+  },
+  "scripts": {
+    "daemon": "pnpm --filter @offhand/daemon dev",
+    "web": "pnpm --filter @offhand/web dev",
+    "test": "pnpm -r test",
+    "typecheck": "pnpm -r typecheck"
+  },
+  "devDependencies": {}
+}

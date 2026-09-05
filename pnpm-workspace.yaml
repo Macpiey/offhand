@@ -1,0 +1,12 @@
+packages:
+  - shared
+  - daemon
+  - relay
+  - web
+
+allowBuilds:
+  esbuild: true
+
+# Per-project Node pin lives in package.json "devEngines.runtime" (pnpm 11+):
+# pnpm auto-downloads Node 22 for this repo's scripts, leaving the machine's
+# global nvm/Node untouched.
