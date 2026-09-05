@@ -1,0 +1,9 @@
+# Render Blueprint — offhand relay (M2, free tier per decision log reversal 2026-09-05)
+services:
+  - type: web
+    name: offhand-relay
+    runtime: node
+    plan: free
+    buildCommand: corepack enable && pnpm install --frozen-lockfile
+    startCommand: pnpm --filter @offhand/relay start
+    healthCheckPath: /healthz
