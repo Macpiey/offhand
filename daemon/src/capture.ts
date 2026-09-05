@@ -32,7 +32,7 @@ export async function uploadArtifact(
   const res = await fetch(`${relayUrl.replace(/\/$/, '')}/artifacts/${encodeURIComponent(sessionId)}`, {
     method: 'POST',
     headers: { 'content-type': 'application/octet-stream', 'x-content-hint': contentHint },
-    body: encrypted,
+    body: Buffer.from(encrypted),
   });
   if (!res.ok) throw new Error(`artifact upload failed: ${res.status}`);
   const body = (await res.json()) as { blobId: string };
