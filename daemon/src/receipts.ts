@@ -21,6 +21,7 @@ export async function workspaceInfo(row: WorkspaceRow): Promise<WorkspaceInfo> {
   return {
     path: row.path,
     label: row.label,
+    policy: row.policy,
     ...(branch ? { gitBranch: branch } : {}),
     ...(status !== null ? { dirty: status.trim() !== '' } : {}),
     ...(row.devUrl ? { devUrl: row.devUrl } : {}),

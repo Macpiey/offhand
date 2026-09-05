@@ -33,6 +33,7 @@ const DAEMON_VERSION = '0.1.0';
 export class SessionManager {
   private sinks = new Set<Sink>();
   private active = new Map<string, RunHandle>(); // sessionId → running handle
+  private activeWorkspaces = new Map<string, string>(); // sessionId → workspace
   private queues = new Map<string, string[]>(); // sessionId → queued prompts
   private runners = new Map<string, AgentRunner>();
   private runnerAvailability = new Map<string, boolean>();
@@ -46,6 +47,13 @@ export class SessionManager {
     runners: AgentRunner[],
   ) {
     for (const r of runners) this.runners.set(r.id, r);
+  }
+
+  /** Policy of the workspace whose run is currently awaiting approval. */
+  currentPolicy(): 'paranoid' | 'balanced' | 'trusting' {
+    const workspaces = [...this.activeWorkspaces.values()];
+    if (workspaces.length !== 1) return 'balanced'; // ambiguous → safe default
+    return this.store.listWorkspaces().find((w) => w.path === workspaces[0])?.policy ?? 'balanced';
   }
 
   async init(): Promise<void> {
@@ -153,6 +161,10 @@ export class SessionManager {
       case 'session-reset':
         this.store.updateSession(msg.sessionId, { conversationId: null });
         return;
+      case 'policy-set':
+        this.store.setWorkspacePolicy(msg.workspace, msg.policy);
+        await this.broadcastManifest();
+        return;
       case 'history-request': {
         const { items, hasMore } = this.store.historyPage(msg.sessionId, msg.beforeSeq, msg.limit);
         reply({ type: 'history-response', rpcId: msg.rpcId, items, hasMore });
@@ -213,6 +225,7 @@ export class SessionManager {
       },
     );
     this.active.set(session.id, handle);
+    this.activeWorkspaces.set(session.id, session.workspace);
     this.record(session.id, (seq) => ({
       type: 'run-started',
       sessionId: session.id,
@@ -237,6 +250,7 @@ export class SessionManager {
       }
     } finally {
       this.active.delete(session.id);
+      this.activeWorkspaces.delete(session.id);
     }
 
     await this.emitReceipt(session, runId, succeeded, Date.now() - startedAt, touchedFiles, toolCount);

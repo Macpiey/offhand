@@ -62,6 +62,7 @@ const runners = [
 
 const manager = new SessionManager(store, runners);
 await manager.init();
+broker.policyProvider = () => manager.currentPolicy();
 
 console.log(`offhand daemon v1`);
 for (const w of store.listWorkspaces()) {

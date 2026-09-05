@@ -5,6 +5,7 @@ import {
   WorkspaceInfoSchema,
   SessionInfoSchema,
   HostInfoSchema,
+  ApprovalPolicySchema,
 } from './manifest.js';
 
 /**
@@ -49,6 +50,13 @@ export const ClientMessageSchema = z.discriminatedUnion('type', [
   }),
   /** Start a fresh agent conversation inside the session. */
   z.object({ type: z.literal('session-reset'), sessionId: z.string() }),
+
+  /** Set a workspace's approval policy (enforced by the daemon). */
+  z.object({
+    type: z.literal('policy-set'),
+    workspace: z.string(),
+    policy: ApprovalPolicySchema,
+  }),
 
   // History RPC (request/response by rpcId; responses are not in the seq log)
   z.object({

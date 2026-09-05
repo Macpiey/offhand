@@ -19,12 +19,18 @@ export const RunnerInfoSchema = z.object({
 });
 export type RunnerInfo = z.infer<typeof RunnerInfoSchema>;
 
+export const ApprovalPolicySchema = z.enum(['paranoid', 'balanced', 'trusting']);
+export type ApprovalPolicy = z.infer<typeof ApprovalPolicySchema>;
+
 export const WorkspaceInfoSchema = z.object({
   path: z.string(),
   label: z.string(),
   gitBranch: z.string().optional(),
   dirty: z.boolean().optional(),
   devUrl: z.string().optional(),
+  /** Approval policy: paranoid = ask everything the CLI would ask; balanced =
+   * same (default); trusting = auto-approve low-risk, ask only high-risk. */
+  policy: ApprovalPolicySchema,
 });
 export type WorkspaceInfo = z.infer<typeof WorkspaceInfoSchema>;
 

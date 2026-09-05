@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { RunEvent } from '@offhand/shared';
+import type { RunEvent, ApprovalPolicy } from '@offhand/shared';
 
 export interface Verdict {
   approve: boolean;
@@ -7,15 +7,18 @@ export interface Verdict {
 }
 
 /**
- * Pending-approval registry (M4). The claude permission hook submits a
- * request; the broker emits an `approval` RunEvent into the active run's
- * stream (→ encrypted → phone) and holds the request open until the phone
- * answers or the timeout auto-denies (02-architecture.md: "unanswered
- * approvals auto-deny after N minutes; run pauses safely rather than dying").
+ * Pending-approval registry (M4, policy-aware since W3). The claude
+ * permission hook submits a request; depending on the workspace policy the
+ * broker either auto-approves low-risk actions (trusting) or emits an
+ * `approval` RunEvent to the phone and waits for the verdict / timeout.
  */
 export class ApprovalBroker {
   private pending = new Map<string, { settle: (v: Verdict) => void; timer: NodeJS.Timeout }>();
   private listener: ((ev: RunEvent) => void) | null = null;
+
+  /** Injected by the session manager: policy of the workspace whose run is
+   * currently asking. Defaults to balanced when ambiguous. */
+  policyProvider: () => ApprovalPolicy = () => 'balanced';
 
   constructor(private readonly timeoutMs: number) {}
 
@@ -32,13 +35,23 @@ export class ApprovalBroker {
     if (!this.listener) {
       return Promise.resolve({ approve: false, message: 'no active session to ask' });
     }
+    const risk = classifyRisk(toolName, input);
+    if (this.policyProvider() === 'trusting' && risk === 'low') {
+      // Trusting workspaces: low-risk actions sail through; high-risk still asks.
+      this.listener({
+        type: 'tool',
+        name: 'auto-approved',
+        summary: `auto-approved (trusting): ${toolName} — ${summariseInput(input)}`,
+      });
+      return Promise.resolve({ approve: true });
+    }
     const id = randomUUID();
     const event: RunEvent = {
       type: 'approval',
       id,
       action: toolName,
       detail: summariseInput(input),
-      risk: classifyRisk(toolName, input),
+      risk,
     };
     return new Promise<Verdict>((settle) => {
       const timer = setTimeout(() => {

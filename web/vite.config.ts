@@ -1,8 +1,9 @@
+import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig } from 'vite';
 
 export default defineConfig({
-  // libsodium's ESM build uses top-level await; the default es2020 target
-  // rejects it. Every browser we care about (installable-PWA era) is es2022+.
+  plugins: [sveltekit()],
+  // libsodium's ESM build uses top-level await; default es2020 rejects it.
   optimizeDeps: { esbuildOptions: { target: 'es2022' } },
   build: { target: 'es2022' },
 });

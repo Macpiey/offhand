@@ -26,6 +26,7 @@ export interface WorkspaceRow {
   path: string;
   label: string;
   devUrl: string | null;
+  policy: 'paranoid' | 'balanced' | 'trusting';
 }
 
 export class Store {
@@ -59,6 +60,12 @@ export class Store {
       );
       CREATE VIRTUAL TABLE IF NOT EXISTS log_fts USING fts5(text, session_id UNINDEXED, seq UNINDEXED);
     `);
+    // Migration: policy column (added in W3).
+    try {
+      this.db.exec(`ALTER TABLE workspaces ADD COLUMN policy TEXT NOT NULL DEFAULT 'balanced'`);
+    } catch {
+      /* column exists */
+    }
   }
 
   // ---- sessions -------------------------------------------------------------
@@ -217,7 +224,12 @@ export class Store {
       path: r.path as string,
       label: r.label as string,
       devUrl: (r.dev_url as string | null) ?? null,
+      policy: (r.policy as WorkspaceRow['policy']) ?? 'balanced',
     }));
+  }
+
+  setWorkspacePolicy(path: string, policy: WorkspaceRow['policy']): void {
+    this.db.prepare(`UPDATE workspaces SET policy = ? WHERE path = ?`).run(policy, path);
   }
 }
 
