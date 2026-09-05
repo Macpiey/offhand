@@ -17,6 +17,14 @@ export const RelayFrameSchema = z.discriminatedUnion('kind', [
     /** ms since epoch of the daemon's last connection activity, if known. */
     lastSeenMs: z.number().int().nonnegative().optional(),
   }),
+  /**
+   * daemon → relay: ask the relay to web-push the session's phones. Carries
+   * ONLY an opaque approval id — never content (push bodies transit
+   * Apple/Google; 02-architecture.md).
+   */
+  z.object({ kind: z.literal('notify'), notice: z.literal('approval'), id: z.string() }),
+  /** relay → daemon: verdict delivered via push-notification action button. */
+  z.object({ kind: z.literal('verdict'), approvalId: z.string(), approve: z.boolean() }),
   z.object({ kind: z.literal('ping') }),
   z.object({ kind: z.literal('pong') }),
 ]);

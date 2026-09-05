@@ -59,6 +59,16 @@ export class RelayClient {
       if (ws.readyState === WebSocket.OPEN) {
         const envelope = seal(msg, this.keys.tx);
         ws.send(JSON.stringify({ kind: 'peer', payload: envelope } satisfies RelayFrame));
+        // Approvals also trigger a content-free push nudge (opaque id only).
+        if (msg.type === 'run-event' && msg.event.type === 'approval') {
+          ws.send(
+            JSON.stringify({
+              kind: 'notify',
+              notice: 'approval',
+              id: msg.event.id,
+            } satisfies RelayFrame),
+          );
+        }
       }
     };
 
@@ -79,6 +89,14 @@ export class RelayClient {
       try {
         frame = parseRelayFrame(raw.toString());
       } catch {
+        return;
+      }
+      if (frame.kind === 'verdict') {
+        // Verdict from a push-notification action button (opaque ids).
+        this.core.handle(
+          { type: 'approval-response', runId: '', approvalId: frame.approvalId, approve: frame.approve },
+          send,
+        );
         return;
       }
       if (frame.kind !== 'peer') return; // pong/presence need no action here

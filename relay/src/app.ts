@@ -9,6 +9,7 @@ import {
   type RelayFrame,
 } from '@offhand/shared';
 import { z } from 'zod';
+import { PushService } from './push.js';
 
 /**
  * offhand relay (M2+M3). A deliberately dumb pipe:
@@ -60,6 +61,7 @@ export function buildApp(opts: { logger?: unknown } = {}): FastifyInstance {
   };
 
   const app = Fastify({ logger: (opts.logger ?? true) as never });
+  const push = new PushService();
 
   // The phone client is served from a different origin (Pages/localhost);
   // pairing endpoints carry only public keys, so open CORS is fine.
@@ -68,6 +70,52 @@ export function buildApp(opts: { logger?: unknown } = {}): FastifyInstance {
   void app.register(websocket);
 
   app.get('/healthz', async () => ({ ok: true }));
+
+  // ---- web push (M4) ------------------------------------------------------
+
+  app.get('/push/vapid', async () => ({ publicKey: push.publicKey }));
+
+  const SubscribeSchema = z.object({
+    session: z.string().min(SESSION_ID_MIN_LENGTH),
+    subscription: z.object({
+      endpoint: z.string().url(),
+      keys: z.object({ p256dh: z.string(), auth: z.string() }),
+    }),
+  });
+
+  app.post('/push/subscribe', async (req, reply) => {
+    const parsed = SubscribeSchema.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: 'bad subscription' });
+    push.subscribe(parsed.data.session, parsed.data.subscription);
+    req.log.info({ session: parsed.data.session.slice(0, 6) }, 'push subscribed');
+    return { ok: true };
+  });
+
+  const VerdictSchema = z.object({
+    session: z.string().min(SESSION_ID_MIN_LENGTH),
+    approvalId: z.string().min(8),
+    approve: z.boolean(),
+  });
+
+  // Notification action buttons post here (opaque ids only — safe per
+  // architecture doc); relay forwards the verdict to the session's daemon.
+  app.post('/push/verdict', async (req, reply) => {
+    const parsed = VerdictSchema.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: 'bad verdict' });
+    const session = sessions.get(parsed.data.session);
+    if (!session?.daemon) return reply.code(404).send({ error: 'daemon offline' });
+    const frame: RelayFrame = {
+      kind: 'verdict',
+      approvalId: parsed.data.approvalId,
+      approve: parsed.data.approve,
+    };
+    safeSend(session.daemon, JSON.stringify(frame));
+    req.log.info(
+      { session: parsed.data.session.slice(0, 6), approve: parsed.data.approve },
+      'push verdict forwarded',
+    );
+    return { ok: true };
+  });
 
   // ---- pairing (M3) -------------------------------------------------------
   // Phone answers a pairing token with its PUBLIC key; daemon polls for it.
@@ -145,6 +193,14 @@ export function buildApp(opts: { logger?: unknown } = {}): FastifyInstance {
           case 'ping':
             socket.send(JSON.stringify({ kind: 'pong' } satisfies RelayFrame));
             return;
+          case 'notify': {
+            // Daemon asks for a push; only opaque ids ever reach Apple/Google.
+            if (role !== 'daemon') return;
+            void push.notifyApproval(sessionId, frame.id).then((sent) => {
+              f.log.info({ session: sidLog, sent }, 'push notify');
+            });
+            return;
+          }
           case 'peer': {
             // Forward verbatim, payload uninspected. Metadata-only log.
             f.log.info({ session: sidLog, from: role, bytes: text.length }, 'forward');

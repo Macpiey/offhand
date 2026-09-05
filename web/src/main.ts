@@ -67,6 +67,54 @@ async function setupFromPairing(p: StoredPairing): Promise<void> {
   const session = sessionIdFromDaemonKey(daemonPk);
   const base = p.relayUrl.replace(/^http/, 'ws').replace(/\/$/, '');
   wsUrl = `${base}/ws?session=${encodeURIComponent(session)}&role=phone`;
+  void setupPush(p.relayUrl, session);
+}
+
+/**
+ * Web push (M4): register the SW and subscribe with the relay's VAPID key.
+ * Push payloads carry only opaque ids; verdicts go back via the SW's action
+ * buttons. Permission needs a user gesture, so we show a button until granted.
+ */
+async function setupPush(relayUrl: string, session: string): Promise<void> {
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+  const reg = await navigator.serviceWorker.register('/sw.js');
+
+  const subscribe = async () => {
+    try {
+      const { publicKey } = (await (await fetch(`${relayUrl}/push/vapid`)).json()) as {
+        publicKey: string;
+      };
+      const sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: publicKey,
+      });
+      await fetch(`${relayUrl}/push/subscribe`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ session, subscription: sub.toJSON() }),
+      });
+      document.getElementById('enable-push')?.remove();
+    } catch (e) {
+      console.warn('push subscribe failed', e);
+    }
+  };
+
+  if (Notification.permission === 'granted') {
+    void subscribe();
+    return;
+  }
+  if (Notification.permission === 'denied') return;
+
+  const btn = document.createElement('button');
+  btn.id = 'enable-push';
+  btn.textContent = '🔔 Enable approval notifications';
+  btn.onclick = () => {
+    void Notification.requestPermission().then((perm) => {
+      if (perm === 'granted') void subscribe();
+      else btn.remove();
+    });
+  };
+  statusEl.after(btn);
 }
 
 function sendToDaemon(msg: ClientMessage): void {
