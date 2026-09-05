@@ -1,5 +1,6 @@
 <script lang="ts">
   import { voiceAvailable, listen } from '$lib/voice.js';
+  import Icon from './Icon.svelte';
 
   let { busy, queued, onsubmit }: { busy: boolean; queued: number; onsubmit: (text: string) => void } =
     $props();
@@ -39,7 +40,7 @@
 
 <div class="composer">
   {#if busy}
-    <div class="working"><span class="pulse"></span>agent working{queued > 0 ? ` · ${queued} queued` : ''}</div>
+    <div class="working"><span class="pulse"></span>Agent working{queued > 0 ? ` · ${queued} queued` : ''}</div>
   {:else}
     <div class="chips">
       {#each chips as chip (chip)}
@@ -49,75 +50,74 @@
   {/if}
   <form onsubmit={submit}>
     <div class="field">
-      <input placeholder="Message your agent…" bind:value={text} autocomplete="off" />
+      <input placeholder="Message your agent" bind:value={text} autocomplete="off" />
       {#if hasVoice}
         <button type="button" class="mic" class:listening onclick={toggleVoice} aria-label="Voice input">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
-            <rect x="9" y="3" width="6" height="11" rx="3" />
-            <path d="M5 11a7 7 0 0 0 14 0M12 18v3" />
-          </svg>
+          <Icon name="mic" size={17} />
         </button>
       {/if}
       <button type="submit" class="send" disabled={!text.trim()} aria-label="Send">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M12 19V5M5 12l7-7 7 7" />
-        </svg>
+        <Icon name="send" size={17} stroke={2.2} />
       </button>
     </div>
   </form>
 </div>
 
 <style>
-  .composer { padding: 0.4rem 1rem calc(0.75rem + env(safe-area-inset-bottom)); }
-  .chips { display: flex; gap: 0.45rem; overflow-x: auto; padding-bottom: 0.55rem; scrollbar-width: none; }
-  .chips::-webkit-scrollbar { display: none; }
+  .composer { padding: 0.35rem 1rem calc(0.7rem + env(safe-area-inset-bottom)); }
+  .chips { display: flex; gap: 0.4rem; overflow-x: auto; padding-bottom: 0.5rem; }
   .chip {
-    background: var(--surface);
+    height: 30px;
+    background: transparent;
+    border: 1px solid var(--hairline-strong);
     color: var(--muted);
-    font-size: 12.5px;
+    font-size: 12px;
     font-weight: 500;
-    padding: 0.35rem 0.9rem;
+    padding: 0 0.85rem;
+    border-radius: 999px;
     white-space: nowrap;
+    flex-shrink: 0;
   }
+  .chip:hover { background: var(--surface); color: var(--text); }
   .working {
     display: flex;
     align-items: center;
     gap: 7px;
-    color: var(--accent);
+    color: var(--muted);
     font-size: 12.5px;
-    font-weight: 600;
-    padding: 0.15rem 0.25rem 0.6rem;
+    font-weight: 500;
+    padding: 0.2rem 0.25rem 0.6rem;
   }
-  .pulse { width: 7px; height: 7px; border-radius: 50%; background: currentColor; animation: pulse 1.3s infinite; }
+  .pulse { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); animation: pulse 1.3s infinite; }
   @keyframes pulse { 50% { opacity: 0.25; } }
   .field {
     display: flex;
     align-items: center;
-    gap: 0.4rem;
+    gap: 0.35rem;
     background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 24px;
-    padding: 0.3rem 0.4rem 0.3rem 1.1rem;
+    border: 1px solid var(--hairline-strong);
+    border-radius: var(--r-lg);
+    padding: 0.3rem 0.35rem 0.3rem 1rem;
+    transition: border-color 0.15s ease;
   }
-  .field:focus-within { border-color: color-mix(in srgb, var(--accent) 60%, transparent); }
+  .field:focus-within { border-color: color-mix(in srgb, var(--accent) 55%, transparent); }
   input {
     flex: 1;
     min-width: 0;
     background: none;
     border: none;
-    padding: 0.45rem 0;
+    padding: 0.5rem 0;
     font-size: 15px;
   }
   .mic, .send {
-    width: 38px;
-    height: 38px;
-    border-radius: 50%;
+    width: 36px;
+    height: 36px;
+    border-radius: var(--r-md);
     padding: 0;
-    display: grid;
-    place-items: center;
+    flex-shrink: 0;
   }
   .mic { background: transparent; color: var(--muted); }
-  .mic svg, .send svg { width: 19px; height: 19px; }
+  .mic:hover { background: var(--surface-2); }
   .mic.listening { background: var(--bad); color: #fff; animation: pulse 1.3s infinite; }
   .send { background: var(--accent); }
 </style>

@@ -4,6 +4,7 @@
   import { boot } from '$lib/client.js';
   import { conn, waiting } from '$lib/stores.js';
   import PairScreen from '$lib/components/PairScreen.svelte';
+  import Icon from '$lib/components/Icon.svelte';
 
   let { children } = $props();
   let bootError = $state('');
@@ -13,9 +14,9 @@
   });
 
   const tabs = [
-    { href: '/', label: 'Sessions', d: 'M4 6h16M4 12h16M4 18h10' },
-    { href: '/session', label: 'Chat', d: 'M21 12a8 8 0 0 1-8 8H5l-2 2V12a8 8 0 0 1 8-8h2a8 8 0 0 1 8 8z' },
-    { href: '/settings', label: 'Settings', d: 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zm8-3a8 8 0 0 1-.2 1.7l2 1.6-2 3.4-2.4-1a8 8 0 0 1-2.9 1.7L14 22h-4l-.5-2.6a8 8 0 0 1-2.9-1.7l-2.4 1-2-3.4 2-1.6A8 8 0 0 1 4 12c0-.6.1-1.1.2-1.7l-2-1.6 2-3.4 2.4 1a8 8 0 0 1 2.9-1.7L10 2h4l.5 2.6a8 8 0 0 1 2.9 1.7l2.4-1 2 3.4-2 1.6c.1.6.2 1.1.2 1.7z' },
+    { href: '/', label: 'Sessions', icon: 'sessions' },
+    { href: '/session', label: 'Chat', icon: 'chat' },
+    { href: '/settings', label: 'Settings', icon: 'settings' },
   ];
 </script>
 
@@ -29,14 +30,14 @@
   {:else}
     <header>
       <span class="brand">offhand</span>
-      <span class="conn">
-        <span class="dot {$conn.phase === 'connected' ? ($conn.daemonOnline ? 'ok' : 'warn') : 'bad'}"></span>
+      <span class="conn" class:off={$conn.phase !== 'connected' || !$conn.daemonOnline}>
+        <span class="dot"></span>
         {#if $conn.phase !== 'connected'}
-          connecting
+          Connecting
         {:else if !$conn.daemonOnline}
-          offline{$conn.lastSeenMs ? ` · ${new Date($conn.lastSeenMs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}
+          Daemon offline
         {:else}
-          {$conn.host?.hostname ?? 'connected'}
+          {$conn.host?.hostname ?? 'Connected'}
         {/if}
       </span>
     </header>
@@ -49,9 +50,7 @@
       {#each tabs as tab (tab.href)}
         <a href={tab.href} class:active={$page.url.pathname === tab.href} aria-label={tab.label}>
           <span class="icon-wrap">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-              <path d={tab.d} />
-            </svg>
+            <Icon name={tab.icon} size={21} />
             {#if tab.href === '/session' && $waiting.size > 0}<span class="badge">{$waiting.size}</span>{/if}
           </span>
           <span class="tab-label">{tab.label}</span>
@@ -63,95 +62,112 @@
 
 <style>
   :global(:root) {
-    --bg: #262624;
-    --surface: #30302e;
-    --surface-2: #3a3937;
-    --border: #43423e;
-    --text: #f0eee6;
-    --muted: #a8a49c;
-    --faint: #7d7a72;
-    --accent: #d97757;
-    --accent-soft: rgba(217, 119, 87, 0.14);
-    --ok: #7fb47a;
-    --ok-soft: rgba(127, 180, 122, 0.14);
-    --warn: #d9a13f;
-    --warn-soft: rgba(217, 161, 63, 0.13);
-    --bad: #e0705f;
-    --bad-soft: rgba(224, 112, 95, 0.13);
-    --radius: 16px;
-    --radius-sm: 11px;
+    --bg: #1f1e1c;
+    --surface: #292826;
+    --surface-2: #343330;
+    --hairline: rgba(240, 238, 230, 0.08);
+    --hairline-strong: rgba(240, 238, 230, 0.14);
+    --text: #ececea;
+    --muted: #9d9a93;
+    --faint: #6f6d67;
+    --accent: #cc6b4d;
+    --accent-hover: #d97757;
+    --accent-soft: rgba(204, 107, 77, 0.12);
+    --ok: #6faf6a;
+    --ok-soft: rgba(111, 175, 106, 0.1);
+    --warn: #cf9b3e;
+    --warn-soft: rgba(207, 155, 62, 0.1);
+    --bad: #d4685a;
+    --bad-soft: rgba(212, 104, 90, 0.1);
+    --r-lg: 14px;
+    --r-md: 10px;
+    --r-sm: 8px;
     --font-body: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Inter, sans-serif;
-    --font-display: ui-serif, Georgia, 'Times New Roman', serif;
-    --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+    --font-display: ui-serif, Georgia, serif;
+    --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   }
+  :global(*) { -webkit-tap-highlight-color: transparent; }
   :global(body) {
     margin: 0;
     background: var(--bg);
     color: var(--text);
-    font: 15px/1.55 var(--font-body);
+    font: 400 15px/1.5 var(--font-body);
     -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
   }
+  :global(::-webkit-scrollbar) { width: 0; height: 0; }
+  :global(*) { scrollbar-width: none; }
   :global(button) {
-    font: 600 14px/1.3 var(--font-body);
+    font: 600 14px/1 var(--font-body);
     border: 0;
-    border-radius: 999px;
+    border-radius: var(--r-md);
     background: var(--accent);
     color: #fff;
-    padding: 0.6rem 1.25rem;
+    height: 40px;
+    padding: 0 1.1rem;
     cursor: pointer;
-    transition: transform 0.06s ease, opacity 0.15s ease;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.45rem;
+    transition: background 0.15s ease, opacity 0.15s ease, transform 0.05s ease;
   }
-  :global(button:active) { transform: scale(0.97); }
-  :global(button:disabled) { opacity: 0.45; }
+  :global(button:hover) { background: var(--accent-hover); }
+  :global(button:active) { transform: scale(0.985); }
+  :global(button:disabled) { opacity: 0.4; pointer-events: none; }
   :global(input), :global(select) {
-    font: 15px/1.4 var(--font-body);
+    font: 400 15px/1.4 var(--font-body);
     background: var(--surface);
     color: var(--text);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    padding: 0.65rem 0.9rem;
+    border: 1px solid var(--hairline-strong);
+    border-radius: var(--r-md);
+    padding: 0.6rem 0.85rem;
     outline: none;
+    transition: border-color 0.15s ease;
   }
   :global(input:focus), :global(select:focus) { border-color: var(--accent); }
+  :global(input::placeholder) { color: var(--faint); }
 
   .app {
     display: flex;
     flex-direction: column;
     height: 100dvh;
-    max-width: 860px;
+    max-width: 760px;
     margin: 0 auto;
     padding-top: env(safe-area-inset-top);
   }
   header {
     display: flex;
-    align-items: baseline;
+    align-items: center;
     justify-content: space-between;
-    padding: 0.75rem 1.25rem 0.6rem;
+    padding: 0.7rem 1.25rem 0.55rem;
   }
   .brand {
-    font: 600 19px/1 var(--font-display);
+    font: 700 17px/1 var(--font-display);
     letter-spacing: -0.01em;
   }
   .conn {
-    display: flex;
+    display: inline-flex;
     align-items: center;
     gap: 6px;
-    font-size: 12.5px;
+    font-size: 12px;
+    font-weight: 500;
     color: var(--muted);
+    background: var(--surface);
+    border: 1px solid var(--hairline);
+    border-radius: 999px;
+    padding: 0.28rem 0.75rem;
   }
-  .dot { width: 7px; height: 7px; border-radius: 50%; }
-  .dot.ok { background: var(--ok); box-shadow: 0 0 6px var(--ok); }
-  .dot.warn { background: var(--warn); }
-  .dot.bad { background: var(--bad); }
+  .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); }
+  .conn.off .dot { background: var(--warn); }
 
   main { flex: 1; overflow-y: auto; display: flex; flex-direction: column; }
 
   nav {
     display: flex;
-    padding: 0.35rem 1.5rem calc(0.35rem + env(safe-area-inset-bottom));
-    background: color-mix(in srgb, var(--bg) 88%, black);
-    border-top: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
-    backdrop-filter: blur(14px);
+    padding: 0.3rem 1.25rem calc(0.3rem + env(safe-area-inset-bottom));
+    border-top: 1px solid var(--hairline);
+    background: color-mix(in srgb, var(--bg) 92%, black);
   }
   nav a {
     flex: 1;
@@ -159,21 +175,19 @@
     flex-direction: column;
     align-items: center;
     gap: 3px;
-    padding: 0.45rem 0 0.3rem;
+    padding: 0.5rem 0 0.35rem;
     color: var(--faint);
     text-decoration: none;
-    border-radius: var(--radius-sm);
     transition: color 0.15s ease;
   }
-  nav a.active { color: var(--accent); }
-  .icon-wrap { position: relative; width: 23px; height: 23px; }
-  .icon-wrap svg { width: 100%; height: 100%; }
-  .tab-label { font-size: 10.5px; font-weight: 600; letter-spacing: 0.02em; }
+  nav a.active { color: var(--text); }
+  .icon-wrap { position: relative; display: grid; place-items: center; height: 22px; }
+  .tab-label { font-size: 10.5px; font-weight: 600; letter-spacing: 0.01em; }
   .badge {
     position: absolute;
-    top: -5px;
-    right: -10px;
-    background: var(--bad);
+    top: -4px;
+    right: -11px;
+    background: var(--accent);
     color: #fff;
     font-size: 10px;
     font-weight: 700;

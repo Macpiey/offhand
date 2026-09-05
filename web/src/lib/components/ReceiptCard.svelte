@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { Receipt } from '@offhand/shared';
   import { fetchArtifact } from '$lib/client.js';
+  import Icon from './Icon.svelte';
 
   let { receipt }: { receipt: Receipt } = $props();
 
@@ -23,30 +24,32 @@
   const secs = $derived(Math.round(receipt.durationMs / 1000));
 </script>
 
-<div class="receipt" class:fail={!receipt.ok}>
+<div class="receipt">
   <div class="row">
-    <span class="check">{receipt.ok ? '✓' : '✕'}</span>
+    <span class="status" class:fail={!receipt.ok}>
+      <Icon name={receipt.ok ? 'check' : 'x'} size={13} stroke={2.5} />
+    </span>
     <span class="summary">
       {#if receipt.filesChanged > 0}
         {receipt.filesChanged} file{receipt.filesChanged > 1 ? 's' : ''} changed
         <span class="add">+{receipt.additions}</span>
         <span class="del">−{receipt.deletions}</span>
       {:else}
-        {receipt.ok ? 'Finished' : 'Failed'} — no file changes
+        {receipt.ok ? 'Completed' : 'Failed'} · no file changes
       {/if}
     </span>
     <span class="time">{secs}s</span>
   </div>
 
   {#if receipt.diff || receipt.screenshotBlobId}
-    <div class="chips">
+    <div class="actions">
       {#if receipt.diff}
-        <button class="chip" class:on={showDiff} onclick={() => (showDiff = !showDiff)}>
-          {showDiff ? 'Hide diff' : 'View diff'}
+        <button class="action" class:on={showDiff} onclick={() => (showDiff = !showDiff)}>
+          <Icon name="diff" size={13} />{showDiff ? 'Hide diff' : 'Diff'}
         </button>
       {/if}
       {#if receipt.screenshotBlobId && !showShot}
-        <button class="chip" onclick={loadShot}>Screenshot</button>
+        <button class="action" onclick={loadShot}><Icon name="camera" size={13} />Screenshot</button>
       {/if}
     </div>
   {/if}
@@ -61,54 +64,70 @@
 
   {#if showShot}
     {#if imgError}
-      <div class="err">Screenshot failed: {imgError}</div>
+      <div class="note bad">Screenshot failed · {imgError}</div>
     {:else if imgUrl}
       <img src={imgUrl} alt="After this run" />
     {:else}
-      <div class="loading">Decrypting…</div>
+      <div class="note">Decrypting…</div>
     {/if}
   {/if}
 </div>
 
 <style>
   .receipt {
-    background: var(--ok-soft);
-    border-radius: var(--radius);
-    padding: 0.75rem 1rem;
-    max-width: 92%;
-    font-size: 14px;
+    background: var(--surface);
+    border: 1px solid var(--hairline);
+    border-radius: var(--r-lg);
+    padding: 0.7rem 0.95rem;
+    max-width: 94%;
+    font-size: 13.5px;
+    display: flex;
+    flex-direction: column;
+    gap: 0.55rem;
   }
-  .receipt.fail { background: var(--bad-soft); }
   .row { display: flex; align-items: center; gap: 0.6rem; }
-  .check { font-weight: 700; color: var(--ok); }
-  .fail .check { color: var(--bad); }
-  .summary { flex: 1; }
+  .status {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: var(--ok-soft);
+    color: var(--ok);
+    display: grid;
+    place-items: center;
+    flex-shrink: 0;
+  }
+  .status.fail { background: var(--bad-soft); color: var(--bad); }
+  .summary { flex: 1; font-weight: 500; }
   .add { color: var(--ok); font-weight: 600; }
   .del { color: var(--bad); font-weight: 600; }
-  .time { color: var(--muted); font-size: 12.5px; }
-  .chips { display: flex; gap: 0.5rem; margin-top: 0.55rem; }
-  .chip {
-    background: color-mix(in srgb, var(--surface-2) 80%, transparent);
-    color: var(--text);
+  .time { color: var(--faint); font-size: 12px; font-variant-numeric: tabular-nums; }
+  .actions { display: flex; gap: 0.45rem; }
+  .action {
+    height: 30px;
+    padding: 0 0.75rem;
+    background: transparent;
+    border: 1px solid var(--hairline-strong);
+    color: var(--muted);
     font-size: 12px;
-    font-weight: 600;
-    padding: 0.3rem 0.8rem;
+    border-radius: var(--r-sm);
+    gap: 0.35rem;
   }
-  .chip.on { background: var(--surface-2); }
+  .action:hover, .action.on { background: var(--surface-2); color: var(--text); }
   pre {
     overflow-x: auto;
-    font: 11.5px/1.5 var(--font-mono);
-    max-height: 50vh;
-    margin: 0.6rem 0 0;
+    font: 11px/1.55 var(--font-mono);
+    max-height: 46vh;
+    margin: 0;
     background: var(--bg);
-    border-radius: var(--radius-sm);
+    border: 1px solid var(--hairline);
+    border-radius: var(--r-md);
     padding: 0.6rem 0.8rem;
   }
   pre span { display: block; white-space: pre; }
   .dadd { color: var(--ok); }
   .ddel { color: var(--bad); }
-  .dhunk { color: var(--accent); }
-  img { max-width: 100%; border-radius: var(--radius-sm); margin-top: 0.6rem; }
-  .loading, .err { color: var(--muted); font-size: 12.5px; padding-top: 0.45rem; }
-  .err { color: var(--bad); }
+  .dhunk { color: var(--muted); }
+  img { max-width: 100%; border-radius: var(--r-md); border: 1px solid var(--hairline); }
+  .note { color: var(--muted); font-size: 12.5px; }
+  .note.bad { color: var(--bad); }
 </style>

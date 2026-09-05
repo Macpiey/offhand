@@ -233,10 +233,14 @@ function applyLogged(msg: ServerMessage): void {
   mutateTranscript(conv.sessionId, (items) => {
     const merged = [...items];
     for (const item of conv.items) {
-      // Coalesce consecutive text chunks into one row for rendering sanity.
       const last = merged[merged.length - 1];
+      // Coalesce consecutive text chunks into one row for rendering sanity.
       if (item.kind === 'text' && last?.kind === 'text') {
         merged[merged.length - 1] = { ...last, text: last.text + item.text, seq: item.seq };
+      } else if (item.kind === 'done') {
+        // The result summary usually repeats the streamed text — drop the echo.
+        const dup = last?.kind === 'text' && last.text.trim().endsWith(item.summary.trim());
+        merged.push({ ...item, summary: dup ? '' : item.summary });
       } else {
         merged.push(item);
       }
@@ -283,6 +287,9 @@ export async function ensureHistory(sessionId: string): Promise<void> {
       const last = rows[rows.length - 1];
       if (item.kind === 'text' && last?.kind === 'text') {
         rows[rows.length - 1] = { ...last, text: last.text + item.text, seq: item.seq };
+      } else if (item.kind === 'done') {
+        const dup = last?.kind === 'text' && last.text.trim().endsWith(item.summary.trim());
+        rows.push({ ...item, summary: dup ? '' : item.summary });
       } else {
         rows.push(item);
       }
