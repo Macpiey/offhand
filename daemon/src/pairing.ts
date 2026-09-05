@@ -60,28 +60,39 @@ export async function ensurePairing(
   }
 
   const kp = generateKeyPair();
-  const token = String(randomInt(100000, 999999));
-  const code = encodePairingCode(token, kp.publicKey);
-  const pairLink = `${webUrl.replace(/\/$/, '')}/#pair=${encodeURIComponent(code)}&relay=${encodeURIComponent(relayUrl.replace(/\/$/, ''))}`;
-
-  console.log('');
-  console.log('  ── PAIRING ──────────────────────────────────────────────');
-  console.log('  Scan this with your phone camera:');
-  console.log('');
-  const qrcode = (await import('qrcode-terminal')).default;
-  qrcode.generate(pairLink, { small: true }, (qr: string) => {
-    console.log(qr.replace(/^/gm, '      '));
-  });
-  console.log(`  …or open ${webUrl} and enter the code manually:`);
-  console.log('');
-  console.log(`      ${code}`);
-  console.log('');
-  console.log('  Waiting for the phone to answer…');
-
   const base = relayUrl.replace(/\/$/, '');
-  const deadline = Date.now() + POLL_TIMEOUT_MS;
+  const qrcode = (await import('qrcode-terminal')).default;
+
+  let token = '';
+  let deadline = 0;
+  const mintToken = (first: boolean) => {
+    token = String(randomInt(100000, 999999));
+    // Refresh before the relay-side 10 min TTL expires the token.
+    deadline = Date.now() + POLL_TIMEOUT_MS - 60_000;
+    const code = encodePairingCode(token, kp.publicKey);
+    const pairLink = `${webUrl.replace(/\/$/, '')}/#pair=${encodeURIComponent(code)}&relay=${encodeURIComponent(base)}`;
+
+    console.log('');
+    if (first) {
+      console.log('  ── PAIRING ──────────────────────────────────────────────');
+      console.log('  Scan this with your phone camera:');
+    } else {
+      console.log('  Previous code expired — here is a fresh one:');
+    }
+    console.log('');
+    qrcode.generate(pairLink, { small: true }, (qr: string) => {
+      console.log(qr.replace(/^/gm, '      '));
+    });
+    console.log(`  …or open ${webUrl} and enter the code manually:`);
+    console.log('');
+    console.log(`      ${code}`);
+    console.log('');
+    console.log('  Waiting for the phone to answer…');
+  };
+  mintToken(true);
+
   for (;;) {
-    if (Date.now() > deadline) throw new Error('pairing timed out — restart the daemon to retry');
+    if (Date.now() > deadline) mintToken(false);
     await new Promise((r) => setTimeout(r, POLL_MS));
     let res: Response;
     try {
