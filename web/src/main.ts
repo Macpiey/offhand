@@ -156,7 +156,7 @@ function handle(msg: ServerMessage): void {
           break;
         case 'approval':
           textSpan = null;
-          appendLine('tool', `🔐 approval requested: ${ev.action} — ${ev.detail} (M4 wires buttons)`);
+          renderApproval(msg.runId, ev.id, ev.action, ev.detail, ev.risk);
           break;
         case 'done':
           textSpan = null;
@@ -218,6 +218,30 @@ function appendLine(cls: string, text: string): void {
   div.className = cls;
   div.textContent = text;
   transcriptEl.appendChild(div);
+}
+
+function renderApproval(runId: string, approvalId: string, action: string, detail: string, risk: 'low' | 'high'): void {
+  const box = document.createElement('div');
+  box.className = 'approval' + (risk === 'high' ? ' high' : '');
+  const label = document.createElement('div');
+  label.textContent = `🔐 ${risk === 'high' ? '⚠ HIGH RISK — ' : ''}${action}: ${detail}`;
+  const buttons = document.createElement('div');
+  buttons.className = 'approval-buttons';
+  const mk = (text: string, cls: string, approve: boolean) => {
+    const b = document.createElement('button');
+    b.textContent = text;
+    b.className = cls;
+    b.onclick = () => {
+      sendToDaemon({ type: 'approval-response', runId, approvalId, approve });
+      label.textContent += approve ? ' — ✔ approved' : ' — ✖ denied';
+      buttons.remove();
+    };
+    return b;
+  };
+  buttons.append(mk('Approve', 'approve', true), mk('Deny', 'deny', false));
+  box.append(label, buttons);
+  transcriptEl.appendChild(box);
+  transcriptEl.scrollTop = transcriptEl.scrollHeight;
 }
 
 function setStatus(html: string): void {

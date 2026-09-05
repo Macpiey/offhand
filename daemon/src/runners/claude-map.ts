@@ -37,6 +37,9 @@ export function mapClaudeEvent(value: unknown): RunEvent[] {
       const events: RunEvent[] = [];
       for (const block of content as Record<string, unknown>[]) {
         if (block?.type === 'tool_use' && typeof block.name === 'string') {
+          // The offhand approval prompt tool is plumbing, not user-visible work;
+          // the approval event itself renders separately.
+          if (block.name.startsWith('mcp__offhand__')) continue;
           events.push({
             type: 'tool',
             name: block.name,

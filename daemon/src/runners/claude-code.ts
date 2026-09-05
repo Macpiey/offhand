@@ -2,24 +2,34 @@ import { spawn, type ChildProcessByStdio } from 'node:child_process';
 import type { Readable } from 'node:stream';
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type { RunEvent, RunSpec } from '@offhand/shared';
 import type { AgentRunner, RunHandle } from '../runner.js';
 import { NdjsonParser } from '../ndjson.js';
 import { mapClaudeEvent } from './claude-map.js';
 import { AsyncEventQueue } from '../async-queue.js';
+import type { ApprovalBroker } from '../approvals.js';
+
+const APPROVAL_MCP_PATH = join(dirname(fileURLToPath(import.meta.url)), '..', 'approval-mcp.mjs');
 
 /**
- * Claude Code headless runner (M1). Flags verified against CLI v2.1.261:
+ * Claude Code headless runner. Flags verified against CLI v2.1.261:
  *   claude -p <prompt> --output-format stream-json --verbose
- *          --include-partial-messages --permission-mode acceptEdits
+ *          --include-partial-messages
  *
- * M1 note: `--permission-mode acceptEdits` lets edit-style prompts run
- * unattended in the throwaway workspace. M4 replaces this with the
- * permission-prompt hook so approvals round-trip to the phone.
+ * M4: permission prompts route through our MCP prompt tool
+ * (--permission-prompt-tool mcp__offhand__approval_prompt) → daemon HTTP →
+ * encrypted approval event → phone → verdict → run continues. Without a
+ * broker (localhost debug), falls back to --permission-mode acceptEdits.
  */
 export class ClaudeCodeRunner implements AgentRunner {
   readonly id = 'claude-code';
+
+  constructor(
+    private readonly broker?: ApprovalBroker,
+    private readonly approvalUrl?: string,
+  ) {}
 
   /** Resolution order: $OFFHAND_CLAUDE_BIN → PATH → native-install default. */
   resolveBin(): string {
@@ -51,22 +61,36 @@ export class ClaudeCodeRunner implements AgentRunner {
       }
     };
 
-    try {
-      child = spawn(
-        this.resolveBin(),
-        [
-          '-p',
-          run.prompt,
-          '--output-format',
-          'stream-json',
-          '--verbose',
-          '--include-partial-messages',
-          '--permission-mode',
-          'acceptEdits',
-        ],
-        { cwd: run.workspace, stdio: ['ignore', 'pipe', 'pipe'] },
+    // With a broker: approvals flow to the phone via our MCP prompt tool.
+    // Without: acceptEdits keeps local debugging unattended.
+    const detachBroker = this.broker?.attach((ev) => queue.push(ev));
+    const args = ['-p', run.prompt, '--output-format', 'stream-json', '--verbose', '--include-partial-messages'];
+    if (this.broker && this.approvalUrl) {
+      const mcpConfig = {
+        mcpServers: {
+          offhand: {
+            command: process.execPath,
+            args: [APPROVAL_MCP_PATH],
+            env: { OFFHAND_APPROVAL_URL: this.approvalUrl },
+          },
+        },
+      };
+      args.push(
+        '--mcp-config', JSON.stringify(mcpConfig),
+        '--strict-mcp-config',
+        '--permission-prompt-tool', 'mcp__offhand__approval_prompt',
       );
+    } else {
+      args.push('--permission-mode', 'acceptEdits');
+    }
+
+    try {
+      child = spawn(this.resolveBin(), args, {
+        cwd: run.workspace,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
     } catch (e) {
+      detachBroker?.();
       queue.push({ type: 'error', message: `failed to spawn claude: ${String(e)}` });
       queue.close();
       return { events: queue, respond: () => {}, cancel: () => {} };
@@ -92,6 +116,7 @@ export class ClaudeCodeRunner implements AgentRunner {
     });
 
     child.on('close', (code) => {
+      detachBroker?.();
       for (const result of parser.flush()) {
         if (result.ok) emit(mapClaudeEvent(result.value));
       }
@@ -112,8 +137,8 @@ export class ClaudeCodeRunner implements AgentRunner {
 
     return {
       events: queue,
-      respond: () => {
-        // M4: wire to the permission-prompt hook. No-op in M1.
+      respond: (approvalId, ok) => {
+        this.broker?.resolve(approvalId, ok);
       },
       cancel: () => child.kill(),
     };
