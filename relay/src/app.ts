@@ -1,6 +1,7 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import cors from '@fastify/cors';
 import websocket from '@fastify/websocket';
+import { randomUUID } from 'node:crypto';
 import type { WebSocket } from 'ws';
 import {
   parseRelayFrame,
@@ -68,6 +69,11 @@ export function buildApp(opts: { logger?: unknown } = {}): FastifyInstance {
   void app.register(cors, { origin: true });
 
   void app.register(websocket);
+
+  // Opaque binary bodies for artifact uploads.
+  app.addContentTypeParser('application/octet-stream', { parseAs: 'buffer' }, (_req, body, done) =>
+    done(null, body),
+  );
 
   app.get('/healthz', async () => ({ ok: true }));
 
@@ -150,6 +156,66 @@ export function buildApp(opts: { logger?: unknown } = {}): FastifyInstance {
     if (!p?.phonePublicKeyB64) return reply.code(404).send({ error: 'no answer yet' });
     pairings.delete(token); // one-shot pickup
     return { phonePublicKey: p.phonePublicKeyB64 };
+  });
+
+  // ---- encrypted artifact blobs (M5) --------------------------------------
+  // POC simplification (logged in decision log): the relay itself holds the
+  // opaque ciphertext blobs instead of R2. Same security property — the relay
+  // cannot decrypt them — R2 arrives when multi-user scale demands it.
+
+  const MAX_BLOB_BYTES = 8 * 1024 * 1024;
+  const MAX_BLOBS_PER_SESSION = 20;
+  const BLOB_TTL_MS = 60 * 60 * 1000;
+  interface Blob_ {
+    data: Buffer;
+    contentHint: string;
+    expiresAtMs: number;
+  }
+  const blobs = new Map<string, Map<string, Blob_>>(); // session → id → blob
+
+  const sweepBlobs = () => {
+    const now = Date.now();
+    for (const [sid, m] of blobs) {
+      for (const [id, b] of m) if (b.expiresAtMs < now) m.delete(id);
+      if (m.size === 0) blobs.delete(sid);
+    }
+  };
+
+  app.post('/artifacts/:session', {
+    // Raw opaque bytes; never parsed, never logged beyond size.
+    config: {},
+    bodyLimit: MAX_BLOB_BYTES,
+  }, async (req, reply) => {
+    sweepBlobs();
+    const sessionId = (req.params as { session: string }).session;
+    if (sessionId.length < SESSION_ID_MIN_LENGTH) return reply.code(400).send({ error: 'bad session' });
+    const data = req.body as Buffer;
+    if (!Buffer.isBuffer(data) || data.length === 0) return reply.code(400).send({ error: 'empty blob' });
+    let m = blobs.get(sessionId);
+    if (!m) {
+      m = new Map();
+      blobs.set(sessionId, m);
+    }
+    if (m.size >= MAX_BLOBS_PER_SESSION) {
+      const oldest = m.keys().next().value as string | undefined;
+      if (oldest) m.delete(oldest);
+    }
+    const id = randomUUID();
+    m.set(id, {
+      data,
+      contentHint: String(req.headers['x-content-hint'] ?? 'application/octet-stream'),
+      expiresAtMs: Date.now() + BLOB_TTL_MS,
+    });
+    req.log.info({ session: sessionId.slice(0, 6), bytes: data.length }, 'artifact stored');
+    return { blobId: id };
+  });
+
+  app.get('/artifacts/:session/:id', async (req, reply) => {
+    sweepBlobs();
+    const { session: sessionId, id } = req.params as { session: string; id: string };
+    const blob = blobs.get(sessionId)?.get(id);
+    if (!blob) return reply.code(404).send({ error: 'no such artifact' });
+    return reply.header('content-type', 'application/octet-stream').send(blob.data);
   });
 
   // ---- session websocket --------------------------------------------------

@@ -15,6 +15,13 @@ export const RunEventSchema = z.discriminatedUnion('type', [
     detail: z.string(),
     risk: z.enum(['low', 'high']),
   }),
+  /** Encrypted blob reference (M5): phone fetches + decrypts locally. */
+  z.object({
+    type: z.literal('artifact'),
+    blobId: z.string(),
+    contentHint: z.string(), // e.g. image/png — relay may see this, content never
+    label: z.string(),
+  }),
   z.object({ type: z.literal('done'), summary: z.string() }),
   z.object({ type: z.literal('error'), message: z.string() }),
 ]);

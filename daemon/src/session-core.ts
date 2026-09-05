@@ -3,6 +3,7 @@ import type { ClientMessage, RunEvent, ServerMessage } from '@offhand/shared';
 import type { AgentRunner, RunHandle } from './runner.js';
 
 export type Sink = (msg: ServerMessage) => void;
+export type AfterRunHook = (runId: string) => Promise<void>;
 
 /**
  * Transport-agnostic session brain. Owns the runner, the active run, and the
@@ -15,6 +16,8 @@ export class SessionCore {
   private seq = 0;
   private activeRun: RunHandle | null = null;
   private sinks = new Set<Sink>();
+  /** M5: runs after a successful run (screenshot capture etc.). */
+  afterRun: AfterRunHook | null = null;
 
   constructor(
     private readonly runner: AgentRunner,
@@ -71,14 +74,31 @@ export class SessionCore {
     this.record({ type: 'run-started', runId, seq: ++this.seq });
 
     void (async () => {
+      let succeeded = false;
       try {
         for await (const event of handle.events) {
+          if (event.type === 'done') succeeded = true;
           this.broadcastEvent(runId, event);
         }
       } finally {
         this.activeRun = null;
       }
+      if (succeeded && this.afterRun) {
+        try {
+          await this.afterRun(runId);
+        } catch (e) {
+          this.broadcastEvent(runId, {
+            type: 'error',
+            message: `artifact capture failed: ${e instanceof Error ? e.message : String(e)}`,
+          });
+        }
+      }
     })();
+  }
+
+  /** Emit an artifact reference into the transcript (M5). */
+  emitArtifact(runId: string, blobId: string, contentHint: string, label: string): void {
+    this.broadcastEvent(runId, { type: 'artifact', blobId, contentHint, label });
   }
 
   private broadcastEvent(runId: string, event: RunEvent): void {

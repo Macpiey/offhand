@@ -82,6 +82,26 @@ export function open(envelope: Envelope, rxKey: Uint8Array): unknown {
 }
 
 /**
+ * Binary artifact encryption (M5): nonce (24 bytes) prepended to secretbox
+ * ciphertext. Uploaded blobs are pure opaque bytes to the relay.
+ */
+export function sealBytes(data: Uint8Array, txKey: Uint8Array): Uint8Array {
+  const nonce = sodium.randombytes_buf(sodium.crypto_secretbox_NONCEBYTES);
+  const ciphertext = sodium.crypto_secretbox_easy(data, nonce, txKey);
+  const out = new Uint8Array(nonce.length + ciphertext.length);
+  out.set(nonce);
+  out.set(ciphertext, nonce.length);
+  return out;
+}
+
+/** Decrypt a sealBytes blob. Throws on tampering or wrong key. */
+export function openBytes(blob: Uint8Array, rxKey: Uint8Array): Uint8Array {
+  const nonceLen = sodium.crypto_secretbox_NONCEBYTES;
+  if (blob.length <= nonceLen) throw new Error('blob too short');
+  return sodium.crypto_secretbox_open_easy(blob.slice(nonceLen), blob.slice(0, nonceLen), rxKey);
+}
+
+/**
  * Short authentication string both sides display after pairing; the human
  * compares them to rule out a middleman who answered the pairing token first.
  */

@@ -7,6 +7,7 @@ import {
   fingerprint,
   seal,
   open,
+  openBytes,
   toB64u,
   fromB64u,
   EnvelopeSchema,
@@ -49,6 +50,8 @@ let ws: WebSocket | null = null;
 let keys: SessionKeys | null = null;
 let wsUrl = 'ws://127.0.0.1:4317';
 let sas = '';
+let relayHttpUrl = ''; // for artifact fetches (relay mode only)
+let sessionIdForBlobs = '';
 let lastSeq = 0;
 let retryMs = 500;
 let textSpan: HTMLElement | null = null; // current streaming text node
@@ -65,6 +68,8 @@ async function setupFromPairing(p: StoredPairing): Promise<void> {
   keys = derivePhoneKeys(phone, daemonPk);
   sas = fingerprint(daemonPk, phone.publicKey);
   const session = sessionIdFromDaemonKey(daemonPk);
+  relayHttpUrl = p.relayUrl.replace(/\/$/, '');
+  sessionIdForBlobs = session;
   const base = p.relayUrl.replace(/^http/, 'ws').replace(/\/$/, '');
   wsUrl = `${base}/ws?session=${encodeURIComponent(session)}&role=phone`;
   void setupPush(p.relayUrl, session);
@@ -206,6 +211,10 @@ function handle(msg: ServerMessage): void {
           textSpan = null;
           renderApproval(msg.runId, ev.id, ev.action, ev.detail, ev.risk);
           break;
+        case 'artifact':
+          textSpan = null;
+          renderArtifact(ev.blobId, ev.contentHint, ev.label);
+          break;
         case 'done':
           textSpan = null;
           appendLine('done', `✔ done${ev.summary ? ` — ${ev.summary}` : ''}`);
@@ -260,6 +269,38 @@ form.addEventListener('submit', (e) => {
   sendToDaemon({ type: 'prompt', prompt });
   promptInput.value = '';
 });
+
+function renderArtifact(blobId: string, contentHint: string, label: string): void {
+  if (!keys || !relayHttpUrl) {
+    appendLine('tool', `📎 artifact: ${label} (relay mode required to view)`);
+    return;
+  }
+  const holder = document.createElement('div');
+  holder.className = 'artifact';
+  holder.textContent = `📎 fetching ${label}…`;
+  transcriptEl.appendChild(holder);
+  void (async () => {
+    try {
+      const res = await fetch(`${relayHttpUrl}/artifacts/${encodeURIComponent(sessionIdForBlobs)}/${encodeURIComponent(blobId)}`);
+      if (!res.ok) throw new Error(`fetch ${res.status}`);
+      const encrypted = new Uint8Array(await res.arrayBuffer());
+      const data = openBytes(encrypted, keys!.rx); // decrypt locally — relay never sees pixels
+      if (contentHint.startsWith('image/')) {
+        const url = URL.createObjectURL(new Blob([data.slice().buffer], { type: contentHint }));
+        holder.textContent = '';
+        const img = document.createElement('img');
+        img.src = url;
+        img.alt = label;
+        holder.appendChild(img);
+      } else {
+        holder.textContent = `📎 ${label} (${data.length} bytes, ${contentHint})`;
+      }
+      transcriptEl.scrollTop = transcriptEl.scrollHeight;
+    } catch (e) {
+      holder.textContent = `📎 ${label} — failed to load (${e instanceof Error ? e.message : e})`;
+    }
+  })();
+}
 
 function appendLine(cls: string, text: string): void {
   const div = document.createElement('div');

@@ -31,6 +31,7 @@ const port = Number(argValue('--port') ?? 4317);
 const relayUrl = argValue('--relay');
 const forceRepair = args.includes('--repair');
 const approvalTimeoutMs = Number(argValue('--approval-timeout') ?? 300) * 1000;
+const captureUrl = argValue('--capture-url');
 
 if (!existsSync(workspace)) {
   console.error(`workspace does not exist: ${workspace}`);
@@ -66,4 +67,15 @@ if (relayUrl) {
   console.log(`  relay     : ${relayUrl}`);
   console.log(`  session   : ${pairing.sessionId}`);
   console.log(`  E2E SAS   : ${pairing.sas}  (must match the phone)`);
+
+  if (captureUrl) {
+    // M5: screenshot after every successful run — encrypted before upload.
+    const { captureScreenshot, uploadArtifact } = await import('./capture.js');
+    core.afterRun = async (runId) => {
+      const png = await captureScreenshot(captureUrl);
+      const blobId = await uploadArtifact(relayUrl, pairing.sessionId, png, pairing.keys, 'image/png');
+      core.emitArtifact(runId, blobId, 'image/png', `screenshot of ${captureUrl}`);
+    };
+    console.log(`  capture   : ${captureUrl} (after each successful run)`);
+  }
 }

@@ -6,6 +6,8 @@ import {
   derivePhoneKeys,
   seal,
   open,
+  sealBytes,
+  openBytes,
   fingerprint,
   encodePairingCode,
   decodePairingCode,
@@ -73,6 +75,20 @@ describe('E2E crypto helpers', () => {
     const f2 = fingerprint(daemon.publicKey, phone.publicKey);
     expect(f1).toEqual(f2);
     expect(f1).toMatch(/^[0-9a-f]{4}(-[0-9a-f]{4}){3}$/);
+  });
+
+  it('sealBytes/openBytes round-trips binary and rejects tampering', () => {
+    const daemon = generateKeyPair();
+    const phone = generateKeyPair();
+    const d = deriveDaemonKeys(daemon, phone.publicKey);
+    const p = derivePhoneKeys(phone, daemon.publicKey);
+    const data = new Uint8Array(4096).map((_, i) => (i * 7 + 13) % 256);
+    const blob = sealBytes(data, d.tx);
+    expect(openBytes(blob, p.rx)).toEqual(data);
+    const tampered = blob.slice();
+    tampered[tampered.length - 1] = (tampered[tampered.length - 1]! ^ 0xff) & 0xff;
+    expect(() => openBytes(tampered, p.rx)).toThrow();
+    expect(() => openBytes(blob.slice(0, 10), p.rx)).toThrow();
   });
 
   it('pairing code round-trips', () => {

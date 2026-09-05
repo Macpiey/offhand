@@ -30,7 +30,7 @@ interface PairingFile {
   phonePublicKey: string;
 }
 
-const PAIRING_DIR = join(homedir(), '.offhand');
+const PAIRING_DIR = process.env.OFFHAND_HOME ?? join(homedir(), '.offhand');
 const PAIRING_PATH = join(PAIRING_DIR, 'pairing.json');
 const POLL_MS = 2000;
 const POLL_TIMEOUT_MS = 10 * 60 * 1000;
