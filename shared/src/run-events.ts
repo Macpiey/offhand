@@ -22,6 +22,8 @@ export const RunEventSchema = z.discriminatedUnion('type', [
     contentHint: z.string(), // e.g. image/png — relay may see this, content never
     label: z.string(),
   }),
+  /** Verdict echo: makes answered approvals resolve correctly on replay. */
+  z.object({ type: z.literal('approval-result'), id: z.string(), approve: z.boolean() }),
   z.object({ type: z.literal('done'), summary: z.string() }),
   z.object({ type: z.literal('error'), message: z.string() }),
 ]);

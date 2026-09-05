@@ -60,6 +60,7 @@ let relayHttpUrl = ''; // for artifact fetches (relay mode only)
 let sessionIdForBlobs = '';
 let lastSeq = 0;
 let retryMs = 500;
+let lastMessageAt = 0;
 let textSpan: HTMLElement | null = null; // current streaming text node
 
 function loadPairing(): StoredPairing | null {
@@ -147,6 +148,7 @@ function connect(): void {
   };
 
   ws.onmessage = (e) => {
+    lastMessageAt = Date.now();
     const raw = String(e.data);
     let msg: ServerMessage;
     try {
@@ -181,6 +183,37 @@ function connect(): void {
   };
 }
 
+/**
+ * iOS suspends background PWAs and hands back zombie WebSockets on resume
+ * (readyState OPEN, nothing flowing). On foreground: request a resume, and if
+ * nothing arrives shortly, force a fresh connection.
+ */
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible') return;
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    try {
+      ws?.close();
+    } catch {
+      /* ignore */
+    }
+    retryMs = 500;
+    connect();
+    return;
+  }
+  const before = lastMessageAt;
+  sendToDaemon({ type: 'resume', afterSeq: lastSeq });
+  setTimeout(() => {
+    if (lastMessageAt === before && ws) {
+      retryMs = 500;
+      try {
+        ws.close(); // triggers onclose → reconnect
+      } catch {
+        /* ignore */
+      }
+    }
+  }, 4000);
+});
+
 function handle(msg: ServerMessage): void {
   switch (msg.type) {
     case 'hello':
@@ -195,6 +228,7 @@ function handle(msg: ServerMessage): void {
       if (msg.seq <= lastSeq) return;
       lastSeq = msg.seq;
       textSpan = null;
+      appendLine('you', `❯ ${msg.prompt}`);
       appendLine('run', `▶ run ${msg.runId.slice(0, 8)}`);
       return;
     case 'run-event': {
@@ -216,6 +250,9 @@ function handle(msg: ServerMessage): void {
         case 'approval':
           textSpan = null;
           renderApproval(msg.runId, ev.id, ev.action, ev.detail, ev.risk);
+          break;
+        case 'approval-result':
+          resolveApprovalCard(ev.id, ev.approve);
           break;
         case 'artifact':
           textSpan = null;
@@ -448,6 +485,8 @@ function appendLine(cls: string, text: string): void {
   transcriptEl.appendChild(div);
 }
 
+const approvalCards = new Map<string, { label: HTMLElement; buttons: HTMLElement }>();
+
 function renderApproval(runId: string, approvalId: string, action: string, detail: string, risk: 'low' | 'high'): void {
   const box = document.createElement('div');
   box.className = 'approval' + (risk === 'high' ? ' high' : '');
@@ -461,15 +500,23 @@ function renderApproval(runId: string, approvalId: string, action: string, detai
     b.className = cls;
     b.onclick = () => {
       sendToDaemon({ type: 'approval-response', runId, approvalId, approve });
-      label.textContent += approve ? ' — ✔ approved' : ' — ✖ denied';
-      buttons.remove();
+      resolveApprovalCard(approvalId, approve);
     };
     return b;
   };
   buttons.append(mk('Approve', 'approve', true), mk('Deny', 'deny', false));
   box.append(label, buttons);
+  approvalCards.set(approvalId, { label, buttons });
   transcriptEl.appendChild(box);
   transcriptEl.scrollTop = transcriptEl.scrollHeight;
+}
+
+/** Marks a card answered — from local taps, other devices, or log replay. */
+function resolveApprovalCard(approvalId: string, approve: boolean): void {
+  const card = approvalCards.get(approvalId);
+  if (!card || !card.buttons.isConnected) return;
+  card.label.textContent += approve ? ' — ✔ approved' : ' — ✖ denied';
+  card.buttons.remove();
 }
 
 function setStatus(html: string): void {

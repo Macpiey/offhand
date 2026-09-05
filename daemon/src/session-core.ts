@@ -71,7 +71,7 @@ export class SessionCore {
     const runId = randomUUID();
     const handle = this.runner.start({ runId, prompt, workspace: this.workspace });
     this.activeRun = handle;
-    this.record({ type: 'run-started', runId, seq: ++this.seq });
+    this.record({ type: 'run-started', runId, seq: ++this.seq, prompt });
 
     void (async () => {
       let succeeded = false;

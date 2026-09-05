@@ -17,6 +17,8 @@ describe('ApprovalBroker', () => {
 
     expect(broker.resolve(ev.id, true)).toBe(true);
     await expect(verdictP).resolves.toEqual({ approve: true, message: undefined });
+    // Verdict echoed into the stream so replays resolve the card.
+    expect(events[1]).toEqual({ type: 'approval-result', id: ev.id, approve: true });
   });
 
   it('resolves deny with a message', async () => {

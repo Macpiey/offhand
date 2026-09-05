@@ -31,7 +31,13 @@ export const ServerMessageSchema = z.discriminatedUnion('type', [
     runnerAvailable: z.boolean(),
     lastSeq: z.number().int().nonnegative(),
   }),
-  z.object({ type: z.literal('run-started'), runId: z.string(), seq: z.number().int() }),
+  z.object({
+    type: z.literal('run-started'),
+    runId: z.string(),
+    seq: z.number().int(),
+    /** Echo of the user's prompt so transcripts (and replays) show it. */
+    prompt: z.string(),
+  }),
   z.object({
     type: z.literal('run-event'),
     runId: z.string(),

@@ -44,6 +44,7 @@ export class ApprovalBroker {
       const timer = setTimeout(() => {
         this.pending.delete(id);
         settle({ approve: false, message: `auto-denied after ${Math.round(this.timeoutMs / 1000)}s timeout` });
+        this.listener?.({ type: 'approval-result', id, approve: false });
       }, this.timeoutMs);
       this.pending.set(id, { settle, timer });
       this.listener!(event);
@@ -57,6 +58,8 @@ export class ApprovalBroker {
     this.pending.delete(approvalId);
     clearTimeout(p.timer);
     p.settle({ approve, message: approve ? undefined : 'denied from phone' });
+    // Echo the verdict into the transcript so replays resolve the card.
+    this.listener?.({ type: 'approval-result', id: approvalId, approve });
     return true;
   }
 }
