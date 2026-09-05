@@ -8,7 +8,8 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@offhand/shared": "workspace:*"
+    "@offhand/shared": "workspace:*",
+    "jsqr": "^1.4.0"
   },
   "devDependencies": {
     "typescript": "^5.6.0",

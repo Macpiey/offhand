@@ -1,3 +1,4 @@
+import jsQR from 'jsqr';
 import {
   ready,
   generateKeyPair,
@@ -271,6 +272,82 @@ pairForm.addEventListener('submit', (e) => {
   })();
 });
 
+// ---- in-app QR scanner ------------------------------------------------------
+// iOS quirk: scanning with the Camera app opens Safari, whose storage is
+// separate from the installed PWA — so the app scans QR codes itself.
+
+const scannerEl = document.getElementById('scanner')!;
+const scanVideo = document.getElementById('scan-video') as HTMLVideoElement;
+let scanStream: MediaStream | null = null;
+let scanning = false;
+
+document.getElementById('scan-qr')!.addEventListener('click', () => {
+  void (async () => {
+    pairErrorEl.textContent = '';
+    try {
+      scanStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment' },
+      });
+    } catch {
+      pairErrorEl.textContent = 'Camera access denied — paste the code manually instead.';
+      return;
+    }
+    scannerEl.style.display = 'flex';
+    scanVideo.srcObject = scanStream;
+    await scanVideo.play();
+    scanning = true;
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
+    const tick = () => {
+      if (!scanning) return;
+      if (scanVideo.readyState === scanVideo.HAVE_ENOUGH_DATA) {
+        canvas.width = scanVideo.videoWidth;
+        canvas.height = scanVideo.videoHeight;
+        ctx.drawImage(scanVideo, 0, 0);
+        const image = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const hit = jsQR(image.data, image.width, image.height);
+        if (hit?.data) {
+          stopScanner();
+          void handleScannedText(hit.data);
+          return;
+        }
+      }
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  })();
+});
+
+document.getElementById('scan-cancel')!.addEventListener('click', stopScanner);
+
+function stopScanner(): void {
+  scanning = false;
+  scannerEl.style.display = 'none';
+  scanStream?.getTracks().forEach((t) => t.stop());
+  scanStream = null;
+}
+
+/** Accepts either the full pairing link (the daemon's QR) or a raw code. */
+async function handleScannedText(text: string): Promise<void> {
+  try {
+    let code = text.trim();
+    let relay: string | undefined;
+    if (/^https?:\/\//i.test(code)) {
+      const hash = new URL(code).hash.replace(/^#/, '');
+      const params = new URLSearchParams(hash);
+      code = params.get('pair') ?? '';
+      relay = params.get('relay') ?? undefined;
+      if (!code) throw new Error('QR does not contain a pairing code');
+    }
+    setStatus('pairing…');
+    await pairWithCode(code, relay);
+  } catch (err) {
+    setStatus('not paired');
+    pairingEl.style.display = 'block';
+    pairErrorEl.textContent = err instanceof Error ? err.message : String(err);
+  }
+}
+
 // ---- settings + A2HS -------------------------------------------------------
 
 document.getElementById('settings-btn')!.addEventListener('click', () => {
@@ -278,6 +355,7 @@ document.getElementById('settings-btn')!.addEventListener('click', () => {
   settingsEl.style.display = showing ? 'none' : 'block';
   if (!showing) {
     const p = loadPairing();
+    (document.getElementById('unpair') as HTMLButtonElement).style.display = p ? 'block' : 'none';
     settingsInfoEl.innerHTML = '';
     const rows: [string, string][] = p
       ? [
