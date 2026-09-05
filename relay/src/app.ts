@@ -1,4 +1,5 @@
 import Fastify, { type FastifyInstance } from 'fastify';
+import cors from '@fastify/cors';
 import websocket from '@fastify/websocket';
 import type { WebSocket } from 'ws';
 import {
@@ -59,6 +60,10 @@ export function buildApp(opts: { logger?: unknown } = {}): FastifyInstance {
   };
 
   const app = Fastify({ logger: (opts.logger ?? true) as never });
+
+  // The phone client is served from a different origin (Pages/localhost);
+  // pairing endpoints carry only public keys, so open CORS is fine.
+  void app.register(cors, { origin: true });
 
   void app.register(websocket);
 
