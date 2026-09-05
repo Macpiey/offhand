@@ -26,6 +26,10 @@ const APPROVAL_MCP_PATH = join(dirname(fileURLToPath(import.meta.url)), '..', 'a
 export class ClaudeCodeRunner implements AgentRunner {
   readonly id = 'claude-code';
 
+  /** Claude session id of the last run — chained via --resume so follow-up
+   * prompts share one conversation instead of stateless one-shots. */
+  private lastSessionId: string | null = null;
+
   constructor(
     private readonly broker?: ApprovalBroker,
     private readonly approvalUrl?: string,
@@ -65,6 +69,10 @@ export class ClaudeCodeRunner implements AgentRunner {
     // Without: acceptEdits keeps local debugging unattended.
     const detachBroker = this.broker?.attach((ev) => queue.push(ev));
     const args = ['-p', run.prompt, '--output-format', 'stream-json', '--verbose', '--include-partial-messages'];
+    if (this.lastSessionId) {
+      // Continue the same conversation: "make it bigger" keeps meaning.
+      args.push('--resume', this.lastSessionId);
+    }
     if (this.broker && this.approvalUrl) {
       const mcpConfig = {
         mcpServers: {
@@ -99,7 +107,10 @@ export class ClaudeCodeRunner implements AgentRunner {
     child.stdout.setEncoding('utf8');
     child.stdout.on('data', (chunk: string) => {
       for (const result of parser.push(chunk)) {
-        if (result.ok) emit(mapClaudeEvent(result.value));
+        if (result.ok) {
+          this.captureSessionId(result.value);
+          emit(mapClaudeEvent(result.value));
+        }
         // Malformed lines are swallowed (never fatal); format churn shows up
         // in the fixture tests, not as dead runs.
       }
@@ -142,5 +153,13 @@ export class ClaudeCodeRunner implements AgentRunner {
       },
       cancel: () => child.kill(),
     };
+  }
+
+  private captureSessionId(value: unknown): void {
+    if (typeof value !== 'object' || value === null) return;
+    const v = value as Record<string, unknown>;
+    if (typeof v.session_id === 'string' && v.session_id !== '') {
+      this.lastSessionId = v.session_id;
+    }
   }
 }
