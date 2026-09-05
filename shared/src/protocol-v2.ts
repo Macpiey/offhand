@@ -32,6 +32,8 @@ export const ClientMessageSchema = z.discriminatedUnion('type', [
     approve: z.boolean(),
   }),
   z.object({ type: z.literal('resume'), afterSeq: z.number().int().nonnegative() }),
+  /** Ask for hello + manifest (sent by clients on every connect). */
+  z.object({ type: z.literal('sync') }),
 
   // Session management
   z.object({

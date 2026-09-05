@@ -140,6 +140,12 @@ export class SessionManager {
         // Any active run may own it; respond() is a no-op for wrong runs.
         for (const handle of this.active.values()) handle.respond(msg.approvalId, msg.approve);
         return;
+      case 'sync':
+        // Phones connect to the relay after the daemon did — they ask for the
+        // handshake instead of hoping to catch the daemon's own broadcast.
+        reply(this.hello());
+        reply(await this.manifest());
+        return;
       case 'resume':
         for (const m of this.store.replayAfter(msg.afterSeq)) reply(m);
         return;

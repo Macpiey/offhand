@@ -147,6 +147,7 @@ function connect(): void {
   ws.onopen = () => {
     retryMs = 500;
     conn.update((c) => ({ ...c, phase: 'connected' }));
+    send({ type: 'sync' }); // fetch hello + manifest regardless of who connected first
     if (lastSeq >= 0) send({ type: 'resume', afterSeq: lastSeq });
   };
 
@@ -162,7 +163,10 @@ function connect(): void {
           daemonOnline: frame.daemonOnline,
           lastSeenMs: frame.lastSeenMs ?? c.lastSeenMs,
         }));
-        if (frame.daemonOnline && lastSeq >= 0) send({ type: 'resume', afterSeq: lastSeq });
+        if (frame.daemonOnline) {
+          send({ type: 'sync' });
+          if (lastSeq >= 0) send({ type: 'resume', afterSeq: lastSeq });
+        }
         return;
       }
       if (frame.kind !== 'peer') return;

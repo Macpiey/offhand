@@ -7,6 +7,7 @@
   let imgUrl = $state('');
   let imgError = $state('');
   let showShot = $state(false);
+  let showDiff = $state(false);
 
   async function loadShot(): Promise<void> {
     showShot = true;
@@ -23,59 +24,91 @@
 </script>
 
 <div class="receipt" class:fail={!receipt.ok}>
-  <div class="head">
-    {receipt.ok ? '✔' : '✖'} {secs}s · {receipt.toolCount} actions ·
-    {#if receipt.filesChanged > 0}
-      {receipt.filesChanged} file{receipt.filesChanged > 1 ? 's' : ''}
-      <span class="add">+{receipt.additions}</span>
-      <span class="del">−{receipt.deletions}</span>
-    {:else}no file changes{/if}
+  <div class="row">
+    <span class="check">{receipt.ok ? '✓' : '✕'}</span>
+    <span class="summary">
+      {#if receipt.filesChanged > 0}
+        {receipt.filesChanged} file{receipt.filesChanged > 1 ? 's' : ''} changed
+        <span class="add">+{receipt.additions}</span>
+        <span class="del">−{receipt.deletions}</span>
+      {:else}
+        {receipt.ok ? 'Finished' : 'Failed'} — no file changes
+      {/if}
+    </span>
+    <span class="time">{secs}s</span>
   </div>
 
-  {#if receipt.diff}
-    <details>
-      <summary>view diff</summary>
-      <pre>{#each receipt.diff.split('\n') as line, i (i)}<span
-            class:dadd={line.startsWith('+') && !line.startsWith('+++')}
-            class:ddel={line.startsWith('-') && !line.startsWith('---')}
-            class:dhunk={line.startsWith('@@')}>{line}
-</span>{/each}</pre>
-    </details>
+  {#if receipt.diff || receipt.screenshotBlobId}
+    <div class="chips">
+      {#if receipt.diff}
+        <button class="chip" class:on={showDiff} onclick={() => (showDiff = !showDiff)}>
+          {showDiff ? 'Hide diff' : 'View diff'}
+        </button>
+      {/if}
+      {#if receipt.screenshotBlobId && !showShot}
+        <button class="chip" onclick={loadShot}>Screenshot</button>
+      {/if}
+    </div>
   {/if}
 
-  {#if receipt.screenshotBlobId}
-    {#if !showShot}
-      <button class="shot-btn" onclick={loadShot}>📷 view screenshot</button>
-    {:else if imgError}
-      <div class="err">screenshot failed: {imgError}</div>
+  {#if showDiff && receipt.diff}
+    <pre>{#each receipt.diff.split('\n') as line, i (i)}<span
+          class:dadd={line.startsWith('+') && !line.startsWith('+++')}
+          class:ddel={line.startsWith('-') && !line.startsWith('---')}
+          class:dhunk={line.startsWith('@@')}>{line}
+</span>{/each}</pre>
+  {/if}
+
+  {#if showShot}
+    {#if imgError}
+      <div class="err">Screenshot failed: {imgError}</div>
     {:else if imgUrl}
-      <img src={imgUrl} alt="screenshot after run" />
+      <img src={imgUrl} alt="After this run" />
     {:else}
-      <div class="loading">decrypting…</div>
+      <div class="loading">Decrypting…</div>
     {/if}
   {/if}
 </div>
 
 <style>
   .receipt {
-    border: 1px solid #238636;
-    border-radius: 10px;
-    padding: 0.6rem 0.8rem;
-    margin: 0.4rem 0;
-    font-size: 13px;
+    background: var(--ok-soft);
+    border-radius: var(--radius);
+    padding: 0.75rem 1rem;
+    max-width: 92%;
+    font-size: 14px;
   }
-  .receipt.fail { border-color: #f85149; }
-  .head { color: #e6edf3; }
-  .add { color: #3fb950; }
-  .del { color: #f85149; }
-  summary { cursor: pointer; color: #8b949e; margin-top: 0.3rem; }
-  pre { overflow-x: auto; font-size: 11px; max-height: 50vh; margin: 0.4rem 0 0; }
+  .receipt.fail { background: var(--bad-soft); }
+  .row { display: flex; align-items: center; gap: 0.6rem; }
+  .check { font-weight: 700; color: var(--ok); }
+  .fail .check { color: var(--bad); }
+  .summary { flex: 1; }
+  .add { color: var(--ok); font-weight: 600; }
+  .del { color: var(--bad); font-weight: 600; }
+  .time { color: var(--muted); font-size: 12.5px; }
+  .chips { display: flex; gap: 0.5rem; margin-top: 0.55rem; }
+  .chip {
+    background: color-mix(in srgb, var(--surface-2) 80%, transparent);
+    color: var(--text);
+    font-size: 12px;
+    font-weight: 600;
+    padding: 0.3rem 0.8rem;
+  }
+  .chip.on { background: var(--surface-2); }
+  pre {
+    overflow-x: auto;
+    font: 11.5px/1.5 var(--font-mono);
+    max-height: 50vh;
+    margin: 0.6rem 0 0;
+    background: var(--bg);
+    border-radius: var(--radius-sm);
+    padding: 0.6rem 0.8rem;
+  }
   pre span { display: block; white-space: pre; }
-  .dadd { color: #3fb950; }
-  .ddel { color: #f85149; }
-  .dhunk { color: #58a6ff; }
-  .shot-btn { background: #21262d; margin-top: 0.5rem; font-size: 12px; padding: 0.35rem 0.7rem; }
-  img { max-width: 100%; border-radius: 8px; margin-top: 0.5rem; border: 1px solid #30363d; }
-  .loading, .err { color: #8b949e; font-size: 12px; padding-top: 0.4rem; }
-  .err { color: #f85149; }
+  .dadd { color: var(--ok); }
+  .ddel { color: var(--bad); }
+  .dhunk { color: var(--accent); }
+  img { max-width: 100%; border-radius: var(--radius-sm); margin-top: 0.6rem; }
+  .loading, .err { color: var(--muted); font-size: 12.5px; padding-top: 0.45rem; }
+  .err { color: var(--bad); }
 </style>
