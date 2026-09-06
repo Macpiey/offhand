@@ -1,9 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import { hostname, platform, tmpdir } from 'node:os';
-import { mkdirSync, writeFileSync } from 'node:fs';
-import { join, basename } from 'node:path';
+import { existsSync, mkdirSync, readdirSync, writeFileSync, type Dirent } from 'node:fs';
+import { dirname, join, basename, parse, resolve } from 'node:path';
 import type {
   ClientMessage,
+  FsDir,
   ServerMessage,
   RunEvent,
   RunnerInfo,
@@ -13,6 +14,7 @@ import type {
 import type { AgentRunner, RunHandle } from './runner.js';
 import { Store, type SessionRow } from './store.js';
 import { workspaceInfo, buildReceipt, shouldScreenshot } from './receipts.js';
+import { listClaudeConversations } from './claude-history.js';
 
 export type Sink = (msg: ServerMessage) => void;
 
@@ -177,6 +179,17 @@ export class SessionManager {
         void row;
         return;
       }
+      case 'session-adopt': {
+        const row = this.store.createSession(msg.workspace, 'claude-code');
+        const found = listClaudeConversations(msg.workspace).find((c) => c.conversationId === msg.conversationId);
+        this.store.updateSession(row.id, {
+          conversationId: msg.conversationId,
+          label: msg.label ?? conversationLabel(found?.firstPrompt, msg.conversationId),
+        });
+        this.store.upsertWorkspace(msg.workspace);
+        await this.broadcastManifest();
+        return;
+      }
       case 'session-update':
         this.store.updateSession(msg.sessionId, {
           ...(msg.label !== undefined ? { label: msg.label } : {}),
@@ -205,6 +218,16 @@ export class SessionManager {
           rpcId: msg.rpcId,
           results: this.store.search(msg.query, msg.limit),
         });
+        return;
+      case 'conversations-request':
+        reply({
+          type: 'conversations-response',
+          rpcId: msg.rpcId,
+          conversations: listClaudeConversations(msg.workspace),
+        });
+        return;
+      case 'fs-list':
+        reply({ type: 'fs-response', rpcId: msg.rpcId, ...listFolders(msg.path) });
         return;
     }
   }
@@ -326,4 +349,66 @@ function trackTouches(event: RunEvent, touched: string[]): void {
   if (!/^(Edit|Write|MultiEdit|NotebookEdit)/.test(event.name)) return;
   const m = /: (.+)$/.exec(event.summary);
   if (m?.[1]) touched.push(m[1].replace(/…$/, ''));
+}
+
+function conversationLabel(firstPrompt: string | undefined, conversationId: string): string {
+  const fallback = `Imported ${conversationId.slice(0, 8)}`;
+  const text = firstPrompt?.trim() || fallback;
+  return text.length <= 56 ? text : `${text.slice(0, 55)}…`;
+}
+
+function listFolders(path: string | undefined): { path: string; parent: string | null; dirs: FsDir[] } {
+  if (!path) return { path: '', parent: null, dirs: driveRoots() };
+
+  const current = resolve(path);
+  const dirs = safeReadDir(current)
+    .filter((entry) => entry.isDirectory() && !skipDir(entry.name))
+    .map((entry) => {
+      const full = join(current, entry.name);
+      return { name: entry.name, path: full, isGit: existsSync(join(full, '.git')) };
+    })
+    .sort((a, b) => Number(b.isGit) - Number(a.isGit) || a.name.localeCompare(b.name))
+    .slice(0, 200);
+
+  return { path: current, parent: isRoot(current) ? null : dirname(current), dirs };
+}
+
+function driveRoots(): FsDir[] {
+  if (process.platform !== 'win32') return [{ name: '/', path: '/', isGit: existsSync('/.git') }];
+  const roots: FsDir[] = [];
+  for (let code = 67; code <= 90; code++) {
+    const name = `${String.fromCharCode(code)}:\\`;
+    if (existsSync(name)) roots.push({ name, path: name, isGit: existsSync(join(name, '.git')) });
+  }
+  return roots.sort((a, b) => a.name.localeCompare(b.name)).slice(0, 200);
+}
+
+function safeReadDir(path: string): Dirent[] {
+  try {
+    return readdirSync(path, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+}
+
+const SYSTEM_DIRS = new Set([
+  'node_modules',
+  '$recycle.bin',
+  'system volume information',
+  'appdata',
+  'windows',
+  'program files',
+  'program files (x86)',
+]);
+
+function skipDir(name: string): boolean {
+  return name.startsWith('.') || SYSTEM_DIRS.has(name.toLowerCase());
+}
+
+function isRoot(path: string): boolean {
+  return stripTrailing(path).toLowerCase() === stripTrailing(parse(path).root).toLowerCase();
+}
+
+function stripTrailing(path: string): string {
+  return path.replace(/[\\/]+$/, '');
 }

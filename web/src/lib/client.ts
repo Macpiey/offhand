@@ -16,6 +16,8 @@ import {
   parseServerMessage,
   parseRelayFrame,
   type ClientMessage,
+  type ConversationSummary,
+  type FsDir,
   type ServerMessage,
   type SessionKeys,
 } from '@offhand/shared';
@@ -205,6 +207,8 @@ function handleServer(msg: ServerMessage): void {
       return;
     case 'history-response':
     case 'search-response':
+    case 'conversations-response':
+    case 'fs-response':
       rpcWaiters.get(msg.rpcId)?.(msg);
       rpcWaiters.delete(msg.rpcId);
       return;
@@ -335,6 +339,30 @@ export async function searchTranscripts(
 ): Promise<{ sessionId: string; seq: number; snippet: string }[]> {
   const res = await rpc({ type: 'search-request', rpcId: crypto.randomUUID(), query, limit: 20 });
   return res.type === 'search-response' ? res.results : [];
+}
+
+export async function listConversations(workspace: string): Promise<ConversationSummary[]> {
+  const res = await rpc({ type: 'conversations-request', rpcId: crypto.randomUUID(), workspace });
+  return res.type === 'conversations-response' ? res.conversations : [];
+}
+
+export function adoptConversation(workspace: string, conversationId: string, label?: string): void {
+  send({
+    type: 'session-adopt',
+    workspace,
+    conversationId,
+    ...(label ? { label } : {}),
+  });
+}
+
+export async function listFolders(path?: string): Promise<{ path: string; parent: string | null; dirs: FsDir[] }> {
+  const res = await rpc({
+    type: 'fs-list',
+    rpcId: crypto.randomUUID(),
+    ...(path ? { path } : {}),
+  });
+  if (res.type !== 'fs-response') throw new Error('unexpected fs response');
+  return { path: res.path, parent: res.parent, dirs: res.dirs };
 }
 
 // ---- artifacts -----------------------------------------------------------------

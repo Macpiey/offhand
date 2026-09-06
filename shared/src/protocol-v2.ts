@@ -16,6 +16,22 @@ import {
  * `resume { afterSeq }` replays with no gaps; clients dedupe by seq.
  */
 
+export const ConversationSummarySchema = z.object({
+  conversationId: z.string(),
+  workspace: z.string(),
+  firstPrompt: z.string(),
+  lastActiveMs: z.number().int(),
+  messageCount: z.number().int(),
+});
+export type ConversationSummary = z.infer<typeof ConversationSummarySchema>;
+
+export const FsDirSchema = z.object({
+  name: z.string(),
+  path: z.string(),
+  isGit: z.boolean(),
+});
+export type FsDir = z.infer<typeof FsDirSchema>;
+
 // ---- phone → daemon ---------------------------------------------------------
 
 export const ClientMessageSchema = z.discriminatedUnion('type', [
@@ -47,6 +63,12 @@ export const ClientMessageSchema = z.discriminatedUnion('type', [
     workspace: z.string(),
     runnerId: z.string(),
     model: z.string().optional(),
+    label: z.string().optional(),
+  }),
+  z.object({
+    type: z.literal('session-adopt'),
+    workspace: z.string(),
+    conversationId: z.string(),
     label: z.string().optional(),
   }),
   z.object({
@@ -82,6 +104,16 @@ export const ClientMessageSchema = z.discriminatedUnion('type', [
     rpcId: z.string(),
     query: z.string().min(1),
     limit: z.number().int().positive().max(50),
+  }),
+  z.object({
+    type: z.literal('conversations-request'),
+    rpcId: z.string(),
+    workspace: z.string(),
+  }),
+  z.object({
+    type: z.literal('fs-list'),
+    rpcId: z.string(),
+    path: z.string().optional(),
   }),
 ]);
 export type ClientMessage = z.infer<typeof ClientMessageSchema>;
@@ -153,6 +185,18 @@ export const ServerMessageSchema = z.discriminatedUnion('type', [
     results: z.array(
       z.object({ sessionId: z.string(), seq: z.number().int(), snippet: z.string() }),
     ),
+  }),
+  z.object({
+    type: z.literal('conversations-response'),
+    rpcId: z.string(),
+    conversations: z.array(ConversationSummarySchema),
+  }),
+  z.object({
+    type: z.literal('fs-response'),
+    rpcId: z.string(),
+    path: z.string(),
+    parent: z.string().nullable(),
+    dirs: z.array(FsDirSchema),
   }),
 
   z.object({ type: z.literal('error'), message: z.string() }),
