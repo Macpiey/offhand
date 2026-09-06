@@ -74,8 +74,10 @@ export const justPaired = writable(false);
 export const drawerOpen = writable(false);
 /** Home listens: opens the New-session sheet (triggerable from the drawer). */
 export const newSessionOpen = writable(false);
-/** sessionId → last reported context usage (from the agent CLI). */
-export const usageBySession = writable<Map<string, { contextTokens: number; contextWindow: number }>>(new Map());
+/** sessionId → last reported context usage + cumulative run cost. */
+export const usageBySession = writable<
+  Map<string, { contextTokens: number; contextWindow: number; costUsd: number }>
+>(new Map());
 export const drops = writable<DropItem[]>(loadDrops());
 
 currentSessionId.subscribe((id) => {
@@ -152,7 +154,12 @@ export function toItems(msg: ServerMessage): { sessionId: string; items: Transcr
         case 'usage': {
           usageBySession.update((m) => {
             const next = new Map(m);
-            next.set(msg.sessionId, { contextTokens: ev.contextTokens, contextWindow: ev.contextWindow });
+            const prev = next.get(msg.sessionId);
+            next.set(msg.sessionId, {
+              contextTokens: ev.contextTokens,
+              contextWindow: ev.contextWindow,
+              costUsd: (prev?.costUsd ?? 0) + (ev.costUsd ?? 0),
+            });
             return next;
           });
           return null; // accounting, not a transcript row

@@ -147,7 +147,7 @@
 </div>
 
 <style>
-  .page { padding: 0.4rem 1.25rem 2rem; display: flex; flex-direction: column; gap: 1.25rem; }
+  .page { padding: 0.4rem 1.25rem calc(var(--inset-b) + 1rem); display: flex; flex-direction: column; gap: 1.25rem; }
   h2 {
     font-size: 11px;
     font-weight: 700;

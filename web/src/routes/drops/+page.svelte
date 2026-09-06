@@ -200,7 +200,7 @@
 </div>
 
 <style>
-  .page { padding: 0.4rem 1.25rem 2rem; display: flex; flex-direction: column; gap: 1rem; }
+  .page { padding: 0.4rem 1.25rem calc(var(--inset-b) + 1rem); display: flex; flex-direction: column; gap: 1rem; }
   .send-card p { margin: 0.25rem 0 0; color: var(--mute); font-size: 13.5px; }
   .send-row { display: flex; gap: 0.5rem; }
   .send-row button { flex: 1; height: 44px; border-radius: 12px; }

@@ -252,7 +252,7 @@
 {/if}
 
 <style>
-  .page { flex: 1; padding: 0.4rem 1.25rem 1rem; display: flex; flex-direction: column; gap: 1rem; }
+  .page { flex: 1; padding: 0.4rem 1.25rem calc(var(--inset-b) + 0.6rem); display: flex; flex-direction: column; gap: 1rem; }
   .hero { margin-top: 0.3rem; }
   h1 { font: 700 26px/1.2 var(--serif); letter-spacing: -0.02em; margin: 0; }
   .status { color: var(--mute); margin: 0.2rem 0 0; font-size: 15px; }

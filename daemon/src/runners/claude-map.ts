@@ -57,7 +57,7 @@ export function mapClaudeEvent(value: unknown): RunEvent[] {
         return [{ type: 'error', message: text || `run failed (${String(v.subtype ?? 'unknown')})` }];
       }
       const events: RunEvent[] = [{ type: 'done', summary: text }];
-      const usage = contextUsage(v.usage);
+      const usage = contextUsage(v.usage, typeof v.total_cost_usd === 'number' ? v.total_cost_usd : undefined);
       if (usage) events.push(usage);
       return events;
     }
@@ -69,14 +69,14 @@ export function mapClaudeEvent(value: unknown): RunEvent[] {
 
 /** Context accounting from claude's result usage block. The live context is
  * roughly input + cache-read + cache-created + output of the LAST turn. */
-function contextUsage(usage: unknown): RunEvent | null {
+function contextUsage(usage: unknown, costUsd?: number): RunEvent | null {
   if (typeof usage !== 'object' || usage === null) return null;
   const u = usage as Record<string, unknown>;
   const n = (k: string) => (typeof u[k] === 'number' ? (u[k] as number) : 0);
   const contextTokens =
     n('input_tokens') + n('cache_read_input_tokens') + n('cache_creation_input_tokens') + n('output_tokens');
   if (contextTokens <= 0) return null;
-  return { type: 'usage', contextTokens, contextWindow: 200_000 };
+  return { type: 'usage', contextTokens, contextWindow: 200_000, ...(costUsd !== undefined ? { costUsd } : {}) };
 }
 
 /** One human-readable line about what a tool call is doing. */

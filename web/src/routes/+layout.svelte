@@ -52,11 +52,14 @@
       setTimeout(update, 300);
       setTimeout(update, 1200);
 
-      // Belt and braces: keyboard dismissal via blur + app foregrounding.
+      // Belt and braces: keyboard dismissal via blur + app foregrounding, plus
+      // a slow heartbeat — iOS occasionally skips the resize event entirely
+      // (snapshot restores), which used to leave a permanent phantom gap.
       window.addEventListener('focusout', () => setTimeout(update, 80));
       document.addEventListener('visibilitychange', () => {
         if (!document.hidden) setTimeout(update, 80);
       });
+      setInterval(update, 2000);
     }
   });
 
@@ -270,7 +273,6 @@
     overscroll-behavior: contain;
     display: flex;
     flex-direction: column;
-    padding-bottom: var(--inset-b);
   }
 
   /* ≥700px: two-pane — sessions rail left, content right. */

@@ -46,6 +46,8 @@ export const RunEventSchema = z.discriminatedUnion('type', [
     type: z.literal('usage'),
     contextTokens: z.number().int(),
     contextWindow: z.number().int(),
+    /** API-equivalent cost of the run (informational for subscription plans). */
+    costUsd: z.number().optional(),
   }),
   z.object({ type: z.literal('error'), message: z.string() }),
 ]);

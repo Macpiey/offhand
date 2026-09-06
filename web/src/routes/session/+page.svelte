@@ -132,17 +132,9 @@
     </div>
     <button class="ctx-meta" onclick={() => (configOpen = true)} aria-label="Session settings">
       <span class="status-dot" class:off={$conn.phase !== 'connected' || !$conn.daemonOnline}></span>
-      <span>{runner?.name ?? session.runnerId}{session.model ? ` · ${session.model}` : ''}</span>
+      <span>{runner?.name ?? session.runnerId}</span>
       {#if workspace?.gitBranch}<span class="sep">·</span><span class="mono">{workspace.gitBranch}</span>{/if}
-      <span class="sep">·</span><span class="cap">{MODES.find((m) => m.id === (session.permissionMode ?? 'guarded'))?.label}</span>
-      {#if ctxPct !== null}
-        <span class="sep">·</span>
-        <span class="ctx-pct" class:warn-pct={ctxPct > 80}>
-          <span class="ctx-bar"><span class="ctx-fill" style="width:{ctxPct}%"></span></span>{ctxPct}%
-        </span>
-      {/if}
       {#if runner && !runner.supportsApprovals}<span class="sep">·</span><span class="warn">unguarded</span>{/if}
-      <Icon name="chevron-down" size={11} />
     </button>
     {#if session.busy}<div class="shimmer"></div>{/if}
   </div>
@@ -190,7 +182,17 @@
     {/each}
   </div>
 
-  <Composer busy={session.busy} queued={session.queuedPrompts} onsubmit={submitPrompt} onstop={stopRun} />
+  <Composer
+    busy={session.busy}
+    queued={session.queuedPrompts}
+    onsubmit={submitPrompt}
+    onstop={stopRun}
+    modeLabel={MODES.find((m) => m.id === (session.permissionMode ?? 'guarded'))?.label ?? ''}
+    modelLabel={session.model || 'Default model'}
+    effortLabel={session.effort ? EFFORTS.find((e) => e.id === session.effort)?.label ?? '' : ''}
+    ctxPct={ctxPct}
+    onConfig={() => (configOpen = true)}
+  />
 
   {#if pendingApproval}
     <ApprovalSheet sessionId={session.id} approval={pendingApproval} />
@@ -201,6 +203,22 @@
       <div class="cfg-sheet" onclick={(e) => e.stopPropagation()} role="dialog" aria-label="Session settings" tabindex="-1" onkeydown={() => {}}>
         <div class="handle"></div>
         <h2>Session settings</h2>
+
+        {#if usage}
+          <div class="usage-card">
+            <div class="u-row">
+              <span class="u-k">Context window</span>
+              <span class="u-v">{(usage.contextTokens / 1000).toFixed(1)}k / {(usage.contextWindow / 1000).toFixed(0)}k · {ctxPct}%</span>
+            </div>
+            <div class="u-bar"><span class="u-fill" class:hot={(ctxPct ?? 0) > 80} style="width:{ctxPct}%"></span></div>
+            {#if usage.costUsd > 0}
+              <div class="u-row">
+                <span class="u-k">This session (API-equivalent)</span>
+                <span class="u-v">${usage.costUsd.toFixed(2)}</span>
+              </div>
+            {/if}
+          </div>
+        {/if}
 
         {#if runner && runner.models.length > 0}
           <span class="group">Model</span>
@@ -308,11 +326,6 @@
   .sep { opacity: 0.5; }
   .status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); flex-shrink: 0; }
   .status-dot.off { background: var(--warn); }
-  .ctx-pct { display: inline-flex; align-items: center; gap: 4px; font-variant-numeric: tabular-nums; }
-  .ctx-pct.warn-pct { color: var(--warn); }
-  .ctx-bar { width: 30px; height: 4px; border-radius: 2px; background: var(--raised); overflow: hidden; display: inline-block; }
-  .ctx-fill { display: block; height: 100%; background: var(--brand); border-radius: 2px; }
-  .ctx-pct.warn-pct .ctx-fill { background: var(--warn); }
 
   .cfg-overlay {
     position: fixed;
@@ -381,8 +394,22 @@
   }
   .seg-btn.sel { background: var(--raised); color: var(--ink); }
   .cfg-done { margin-top: 0.5rem; height: 46px; }
+  .usage-card {
+    background: var(--bg);
+    border: 1px solid var(--hairline);
+    border-radius: 12px;
+    padding: 0.75rem 0.9rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  .u-row { display: flex; justify-content: space-between; align-items: baseline; gap: 0.5rem; }
+  .u-k { font-size: 12px; color: var(--mute); }
+  .u-v { font-size: 12.5px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .u-bar { height: 5px; border-radius: 3px; background: var(--raised); overflow: hidden; }
+  .u-fill { display: block; height: 100%; border-radius: 3px; background: var(--brand); }
+  .u-fill.hot { background: var(--warn); }
   .mono { font-family: var(--mono); font-size: 11px; }
-  .cap { text-transform: capitalize; }
   .warn { color: var(--warn); font-weight: 600; }
   .shimmer {
     position: absolute;

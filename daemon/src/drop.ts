@@ -143,7 +143,10 @@ export function startDropOutboxWatcher(
 export function showDropToast(savedPath: string, textToClipboard?: string): void {
   const appId = '{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\\WindowsPowerShell\\v1.0\\powershell.exe';
   const title = 'offhand — drop received';
-  const body = textToClipboard !== undefined ? 'Copied to clipboard · also saved to Downloads\\offhand' : `Saved to ${savedPath}`;
+  const body =
+    textToClipboard !== undefined
+      ? 'Copied to clipboard · also saved to Downloads\\offhand'
+      : `${basename(savedPath)} — tap to open`;
   const lines = [
     textToClipboard !== undefined ? `Set-Clipboard -Value ${psQuote(textToClipboard)}` : '',
     `[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null`,
@@ -151,7 +154,9 @@ export function showDropToast(savedPath: string, textToClipboard?: string): void
     `$xml = [Windows.Data.Xml.Dom.XmlDocument]::new()`,
     `$t = [System.Security.SecurityElement]::Escape(${psQuote(title)})`,
     `$b = [System.Security.SecurityElement]::Escape(${psQuote(body)})`,
-    `$xml.LoadXml('<toast><visual><binding template="ToastGeneric"><text>' + $t + '</text><text>' + $b + '</text></binding></visual></toast>')`,
+    // Protocol activation: clicking the toast opens the file with its default app.
+    `$launch = [System.Security.SecurityElement]::Escape(([System.Uri]${psQuote(savedPath)}).AbsoluteUri)`,
+    `$xml.LoadXml('<toast activationType="protocol" launch="' + $launch + '"><visual><binding template="ToastGeneric"><text>' + $t + '</text><text>' + $b + '</text></binding></visual></toast>')`,
     `$toast = [Windows.UI.Notifications.ToastNotification]::new($xml)`,
     `[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier(${psQuote(appId)}).Show($toast)`,
   ].filter(Boolean);

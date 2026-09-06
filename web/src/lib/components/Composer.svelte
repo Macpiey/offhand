@@ -14,12 +14,25 @@
     queued,
     onsubmit,
     onstop,
+    modeLabel = '',
+    modelLabel = '',
+    effortLabel = '',
+    ctxPct = null,
+    onConfig,
   }: {
     busy: boolean;
     queued: number;
     onsubmit: (text: string, attachments: Attachment[]) => void;
     onstop: () => void;
+    modeLabel?: string;
+    modelLabel?: string;
+    effortLabel?: string;
+    ctxPct?: number | null;
+    onConfig?: () => void;
   } = $props();
+
+  // Context gauge ring (r=7 → circumference ≈ 44).
+  const RING = 2 * Math.PI * 7;
 
   let text = $state('');
   let listening = $state(false);
@@ -113,9 +126,6 @@
   <form onsubmit={submit}>
     <div class="field">
       <input type="file" multiple hidden bind:this={fileInput} onchange={onFiles} />
-      <button type="button" class="mic attach" onclick={() => fileInput?.click()} aria-label="Attach file">
-        <Icon name="plus" size={18} />
-      </button>
       <textarea
         bind:this={area}
         bind:value={text}
@@ -124,14 +134,36 @@
         placeholder={busy ? 'Queue another message…' : 'Message your agent'}
         rows="1"
       ></textarea>
-      {#if hasVoice}
-        <button type="button" class="mic" class:listening onclick={toggleVoice} aria-label="Voice input">
-          <Icon name="mic" size={17} />
+      <div class="controls">
+        <button type="button" class="round" onclick={() => fileInput?.click()} aria-label="Attach file">
+          <Icon name="plus" size={17} />
         </button>
-      {/if}
-      <button type="submit" class="send" disabled={(!text.trim() && attachments.length === 0) || uploading} aria-label="Send">
-        <Icon name="send" size={17} stroke={2.2} />
-      </button>
+        {#if onConfig && modeLabel}
+          <button type="button" class="pill" onclick={onConfig} aria-label="Permission mode">
+            <Icon name="shield" size={12} />{modeLabel}
+          </button>
+        {/if}
+        <span class="spacer"></span>
+        {#if onConfig && (modelLabel || ctxPct !== null)}
+          <button type="button" class="pill" onclick={onConfig} aria-label="Model and usage">
+            {#if ctxPct !== null}
+              <svg class="ring" viewBox="0 0 18 18" class:hot={ctxPct > 80}>
+                <circle class="bg" cx="9" cy="9" r="7" />
+                <circle class="fg" cx="9" cy="9" r="7" stroke-dasharray="{(ctxPct / 100) * RING} {RING}" />
+              </svg>
+            {/if}
+            {modelLabel}{effortLabel ? ` · ${effortLabel}` : ''}
+          </button>
+        {/if}
+        {#if hasVoice}
+          <button type="button" class="round" class:listening onclick={toggleVoice} aria-label="Voice input">
+            <Icon name="mic" size={16} />
+          </button>
+        {/if}
+        <button type="submit" class="send" disabled={(!text.trim() && attachments.length === 0) || uploading} aria-label="Send">
+          <Icon name="send" size={16} stroke={2.2} />
+        </button>
+      </div>
     </div>
   </form>
 </div>
@@ -162,38 +194,58 @@
   }
   .field {
     display: flex;
-    align-items: flex-end;
-    gap: 0.35rem;
+    flex-direction: column;
+    gap: 0.1rem;
     background: var(--card);
     border: 1px solid var(--hairline-2);
-    border-radius: 22px;
-    padding: 0.3rem 0.35rem 0.3rem 1rem;
+    border-radius: 20px;
+    padding: 0.55rem 0.55rem 0.45rem 0.55rem;
     transition: border-color 0.15s ease;
   }
   .field:focus-within { border-color: color-mix(in srgb, var(--brand) 55%, transparent); }
   textarea {
-    flex: 1;
-    min-width: 0;
+    width: 100%;
     background: none;
     border: none;
-    padding: 0.5rem 0;
+    padding: 0.15rem 0.5rem 0.35rem;
     font-size: 15px;
     resize: none;
     max-height: 110px;
     line-height: 1.45;
   }
-  .mic, .send {
-    width: 36px;
-    height: 36px;
+  .controls { display: flex; align-items: center; gap: 0.3rem; }
+  .spacer { flex: 1; }
+  .round, .send {
+    width: 34px;
+    height: 34px;
     border-radius: 50%;
     padding: 0;
     flex-shrink: 0;
   }
-  .mic { background: transparent; color: var(--mute); }
-  .mic:active { background: var(--raised); }
-  .mic.listening { background: var(--risk); color: #fff; animation: pulse 1.3s infinite; }
-  .attach { align-self: flex-end; margin-left: -0.55rem; }
+  .round { background: transparent; color: var(--mute); }
+  .round:active { background: var(--raised); }
+  .round.listening { background: var(--risk); color: #fff; animation: pulse 1.3s infinite; }
   .send { background: var(--brand); }
+  .pill {
+    height: 30px;
+    padding: 0 0.7rem;
+    border-radius: 999px;
+    background: var(--bg);
+    border: 1px solid var(--hairline);
+    color: var(--mute);
+    font-size: 11.5px;
+    font-weight: 600;
+    gap: 0.35rem;
+    max-width: 40vw;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+  .pill:active { background: var(--bg); color: var(--ink); }
+  .ring { width: 15px; height: 15px; transform: rotate(-90deg); flex-shrink: 0; }
+  .ring circle { fill: none; stroke-width: 2.6; }
+  .ring .bg { stroke: var(--raised); }
+  .ring .fg { stroke: var(--brand); stroke-linecap: round; }
+  .ring.hot .fg { stroke: var(--warn); }
   .attach-row { display: flex; flex-wrap: wrap; gap: 0.35rem; padding: 0 0.25rem 0.5rem; }
   .attach-chip {
     display: inline-flex;
