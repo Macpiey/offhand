@@ -42,6 +42,10 @@ export const SessionInfoSchema = z.object({
   label: z.string(),
   createdAtMs: z.number().int(),
   archived: z.boolean(),
+  /** How the agent asks before acting; default guarded. */
+  permissionMode: z.enum(['guarded', 'plan', 'acceptEdits', 'bypass']).optional(),
+  /** Thinking budget tier. */
+  effort: z.enum(['low', 'medium', 'high', 'max']).optional(),
   /** Whether a run is active or prompts are queued right now. */
   busy: z.boolean(),
   queuedPrompts: z.number().int(),

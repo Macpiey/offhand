@@ -64,6 +64,8 @@ export const justPaired = writable(false);
 export const drawerOpen = writable(false);
 /** Home listens: opens the New-session sheet (triggerable from the drawer). */
 export const newSessionOpen = writable(false);
+/** sessionId → last reported context usage (from the agent CLI). */
+export const usageBySession = writable<Map<string, { contextTokens: number; contextWindow: number }>>(new Map());
 
 currentSessionId.subscribe((id) => {
   if (typeof localStorage !== 'undefined' && id) localStorage.setItem('offhand.currentSession', id);
@@ -126,6 +128,14 @@ export function toItems(msg: ServerMessage): { sessionId: string; items: Transcr
           return null;
         case 'artifact':
           return null; // v1: artifacts arrive via receipts
+        case 'usage': {
+          usageBySession.update((m) => {
+            const next = new Map(m);
+            next.set(msg.sessionId, { contextTokens: ev.contextTokens, contextWindow: ev.contextWindow });
+            return next;
+          });
+          return null; // accounting, not a transcript row
+        }
         case 'done':
           return { sessionId: msg.sessionId, items: [{ kind: 'done', seq: msg.seq, summary: ev.summary }] };
         case 'error':

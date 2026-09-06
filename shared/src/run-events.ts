@@ -41,9 +41,20 @@ export const RunEventSchema = z.discriminatedUnion('type', [
     answer: z.string().optional(),
   }),
   z.object({ type: z.literal('done'), summary: z.string() }),
+  /** Post-run context accounting (from the agent CLI's own usage report). */
+  z.object({
+    type: z.literal('usage'),
+    contextTokens: z.number().int(),
+    contextWindow: z.number().int(),
+  }),
   z.object({ type: z.literal('error'), message: z.string() }),
 ]);
 export type RunEvent = z.infer<typeof RunEventSchema>;
+
+export const PermissionModeSchema = z.enum(['guarded', 'plan', 'acceptEdits', 'bypass']);
+export type PermissionMode = z.infer<typeof PermissionModeSchema>;
+export const EffortSchema = z.enum(['low', 'medium', 'high', 'max']);
+export type Effort = z.infer<typeof EffortSchema>;
 
 export const RunSpecSchema = z.object({
   runId: z.string(),
@@ -54,6 +65,12 @@ export const RunSpecSchema = z.object({
   model: z.string().optional(),
   /** Agent-side conversation id to resume (continuity across runs). */
   resumeConversationId: z.string().optional(),
+  /** How the agent asks before acting (guarded = every risky action prompts). */
+  permissionMode: PermissionModeSchema.optional(),
+  /** Thinking budget tier. */
+  effort: EffortSchema.optional(),
+  /** Local file paths of attachments already staged by the daemon. */
+  attachments: z.array(z.string()).optional(),
 });
 export type RunSpec = z.infer<typeof RunSpecSchema>;
 

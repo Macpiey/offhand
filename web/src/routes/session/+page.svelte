@@ -1,7 +1,8 @@
 <script lang="ts">
   import { tick } from 'svelte';
-  import { sessions, transcripts, currentSessionId, runners, workspaces, conn, type TranscriptItem } from '$lib/stores.js';
+  import { sessions, transcripts, currentSessionId, runners, workspaces, conn, usageBySession, type TranscriptItem } from '$lib/stores.js';
   import { send, ensureHistory } from '$lib/client.js';
+  import { portal } from '$lib/portal.js';
   import { renderMarkdown } from '$lib/markdown.js';
   import ReceiptCard from '$lib/components/ReceiptCard.svelte';
   import Composer from '$lib/components/Composer.svelte';
@@ -12,12 +13,29 @@
   let scroller = $state<HTMLElement | null>(null);
   let atBottom = $state(true);
   let menuOpen = $state(false);
+  let configOpen = $state(false);
+
+  const MODES: { id: 'guarded' | 'plan' | 'acceptEdits' | 'bypass'; label: string; desc: string }[] = [
+    { id: 'guarded', label: 'Guarded', desc: 'Risky actions ask you first' },
+    { id: 'plan', label: 'Plan', desc: 'Plans before making changes' },
+    { id: 'acceptEdits', label: 'Accept edits', desc: 'File edits sail through, commands still ask' },
+    { id: 'bypass', label: 'Bypass', desc: 'Never asks — full trust' },
+  ];
+  const EFFORTS: { id: '' | 'low' | 'medium' | 'high' | 'max'; label: string }[] = [
+    { id: '', label: 'Default' },
+    { id: 'low', label: 'Low' },
+    { id: 'medium', label: 'Med' },
+    { id: 'high', label: 'High' },
+    { id: 'max', label: 'Max' },
+  ];
 
   const session = $derived($sessions.find((s) => s.id === $currentSessionId));
   const items = $derived($transcripts.get($currentSessionId) ?? []);
   const live = $derived($sessions.filter((s) => !s.archived));
   const workspace = $derived($workspaces.find((w) => w.path === session?.workspace));
   const runner = $derived($runners.find((r) => r.id === session?.runnerId));
+  const usage = $derived($usageBySession.get($currentSessionId));
+  const ctxPct = $derived(usage ? Math.min(100, Math.round((usage.contextTokens / usage.contextWindow) * 100)) : null);
 
   const pendingApproval = $derived(
     [...items].reverse().find(
@@ -60,8 +78,10 @@
     atBottom = scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 60;
   }
 
-  function submitPrompt(text: string): void {
-    if (session) send({ type: 'prompt', sessionId: session.id, prompt: text });
+  function submitPrompt(text: string, attachments: { blobId: string; name: string; mime: string }[]): void {
+    if (session) {
+      send({ type: 'prompt', sessionId: session.id, prompt: text, ...(attachments.length ? { attachments } : {}) });
+    }
   }
 
   function stopRun(): void {
@@ -114,7 +134,13 @@
       <span class="status-dot" class:off={$conn.phase !== 'connected' || !$conn.daemonOnline}></span>
       <span>{runner?.name ?? session.runnerId}{session.model ? ` · ${session.model}` : ''}</span>
       {#if workspace?.gitBranch}<span class="sep">·</span><span class="mono">{workspace.gitBranch}</span>{/if}
-      {#if workspace}<span class="sep">·</span><span class="cap">{workspace.policy}</span>{/if}
+      <span class="sep">·</span><span class="cap">{MODES.find((m) => m.id === (session.permissionMode ?? 'guarded'))?.label}</span>
+      {#if ctxPct !== null}
+        <span class="sep">·</span>
+        <span class="ctx-pct" class:warn-pct={ctxPct > 80}>
+          <span class="ctx-bar"><span class="ctx-fill" style="width:{ctxPct}%"></span></span>{ctxPct}%
+        </span>
+      {/if}
       {#if runner && !runner.supportsApprovals}<span class="sep">·</span><span class="warn">unguarded</span>{/if}
     </div>
     {#if session.busy}<div class="shimmer"></div>{/if}
@@ -123,6 +149,7 @@
   {#if menuOpen}
     <div class="menu-scrim" onclick={() => (menuOpen = false)} onkeydown={() => {}} role="presentation"></div>
     <div class="menu">
+      <button onclick={() => { menuOpen = false; configOpen = true; }}><Icon name="settings" size={14} />Session settings</button>
       <button onclick={renameSession}>Rename</button>
       <button onclick={resetConversation}><Icon name="refresh" size={14} />New conversation</button>
       <button class="danger" onclick={archiveSession}><Icon name="archive" size={14} />Archive</button>
@@ -166,6 +193,53 @@
 
   {#if pendingApproval}
     <ApprovalSheet sessionId={session.id} approval={pendingApproval} />
+  {/if}
+
+  {#if configOpen}
+    <div class="cfg-overlay" use:portal onclick={() => (configOpen = false)} onkeydown={(e) => e.key === 'Escape' && (configOpen = false)} role="presentation">
+      <div class="cfg-sheet" onclick={(e) => e.stopPropagation()} role="dialog" aria-label="Session settings" tabindex="-1" onkeydown={() => {}}>
+        <div class="handle"></div>
+        <h2>Session settings</h2>
+
+        {#if runner && runner.models.length > 0}
+          <span class="group">Model</span>
+          <select
+            value={session.model ?? ''}
+            onchange={(e) => send({ type: 'session-update', sessionId: session.id, model: (e.target as HTMLSelectElement).value })}
+          >
+            <option value="">Default</option>
+            {#each runner.models as m (m)}<option value={m}>{m}</option>{/each}
+          </select>
+        {/if}
+
+        <span class="group">Permission mode</span>
+        <div class="cfg-opts">
+          {#each MODES as m (m.id)}
+            <button
+              class="cfg-opt"
+              class:sel={(session.permissionMode ?? 'guarded') === m.id}
+              onclick={() => send({ type: 'session-update', sessionId: session.id, permissionMode: m.id })}
+            >
+              <span class="radio" class:on={(session.permissionMode ?? 'guarded') === m.id}></span>
+              <span class="cfg-copy"><span class="cfg-label">{m.label}</span><span class="cfg-desc">{m.desc}</span></span>
+            </button>
+          {/each}
+        </div>
+
+        <span class="group">Thinking effort{session.effort ? '' : ' · default'}</span>
+        <div class="seg">
+          {#each EFFORTS.filter((e) => e.id !== '') as ef (ef.id)}
+            <button
+              class="seg-btn"
+              class:sel={session.effort === ef.id}
+              onclick={() => ef.id && send({ type: 'session-update', sessionId: session.id, effort: ef.id })}
+            >{ef.label}</button>
+          {/each}
+        </div>
+
+        <button class="cfg-done" onclick={() => (configOpen = false)}>Done</button>
+      </div>
+    </div>
   {/if}
 {/if}
 
@@ -225,6 +299,79 @@
   .sep { opacity: 0.5; }
   .status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); flex-shrink: 0; }
   .status-dot.off { background: var(--warn); }
+  .ctx-pct { display: inline-flex; align-items: center; gap: 4px; font-variant-numeric: tabular-nums; }
+  .ctx-pct.warn-pct { color: var(--warn); }
+  .ctx-bar { width: 30px; height: 4px; border-radius: 2px; background: var(--raised); overflow: hidden; display: inline-block; }
+  .ctx-fill { display: block; height: 100%; background: var(--brand); border-radius: 2px; }
+  .ctx-pct.warn-pct .ctx-fill { background: var(--warn); }
+
+  .cfg-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+    background: rgba(0, 0, 0, 0.55);
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    padding-bottom: calc(100dvh - var(--vvh, 100dvh) - var(--vvo, 0px));
+  }
+  .cfg-sheet {
+    width: 100%;
+    max-width: 560px;
+    max-height: 86dvh;
+    overflow-y: auto;
+    background: var(--card);
+    border-radius: var(--r-sheet) var(--r-sheet) 0 0;
+    padding: 0.55rem 1.4rem calc(var(--inset-b) + 1rem);
+    display: flex;
+    flex-direction: column;
+    gap: 0.7rem;
+    animation: rise 0.24s cubic-bezier(0.2, 0.9, 0.3, 1);
+  }
+  @keyframes rise { from { transform: translateY(48px); opacity: 0.4; } }
+  .handle { width: 36px; height: 4px; border-radius: 2px; background: var(--hairline-2); align-self: center; }
+  h2 { font: 600 17px/1.2 var(--font); margin: 0.3rem 0 0.2rem; }
+  .group {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--ghost);
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    margin-top: 0.3rem;
+  }
+  .cfg-opts { display: flex; flex-direction: column; gap: 0.4rem; }
+  .cfg-opt {
+    justify-content: flex-start;
+    min-height: 48px;
+    height: auto;
+    padding: 0.5rem 0.9rem;
+    background: var(--bg);
+    border: 1px solid var(--hairline);
+    color: var(--ink);
+    font-weight: 500;
+    gap: 0.7rem;
+    border-radius: 12px;
+    text-align: left;
+  }
+  .cfg-opt:active { background: var(--bg); }
+  .cfg-opt.sel { border-color: var(--brand); }
+  .radio { width: 16px; height: 16px; border-radius: 50%; border: 1.5px solid var(--ghost); flex-shrink: 0; }
+  .radio.on { border-color: var(--brand); background: radial-gradient(circle, var(--brand) 45%, transparent 50%); }
+  .cfg-copy { display: flex; flex-direction: column; gap: 1px; }
+  .cfg-label { font-size: 14px; font-weight: 600; }
+  .cfg-desc { font-size: 11.5px; color: var(--mute); font-weight: 400; }
+  .seg { display: flex; gap: 4px; background: var(--bg); border: 1px solid var(--hairline); border-radius: 11px; padding: 4px; }
+  .seg-btn {
+    flex: 1;
+    height: 34px;
+    background: transparent;
+    color: var(--mute);
+    font-size: 12.5px;
+    border-radius: 8px;
+    padding: 0;
+  }
+  .seg-btn.sel { background: var(--raised); color: var(--ink); }
+  .cfg-done { margin-top: 0.5rem; height: 46px; }
   .mono { font-family: var(--mono); font-size: 11px; }
   .cap { text-transform: capitalize; }
   .warn { color: var(--warn); font-weight: 600; }

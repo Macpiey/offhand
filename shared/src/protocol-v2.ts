@@ -24,6 +24,10 @@ export const ClientMessageSchema = z.discriminatedUnion('type', [
     type: z.literal('prompt'),
     sessionId: z.string(),
     prompt: z.string().min(1),
+    /** Encrypted blobs already uploaded to the relay by the phone. */
+    attachments: z
+      .array(z.object({ blobId: z.string(), name: z.string(), mime: z.string() }))
+      .optional(),
   }),
   z.object({ type: z.literal('cancel'), sessionId: z.string() }),
   z.object({
@@ -51,6 +55,8 @@ export const ClientMessageSchema = z.discriminatedUnion('type', [
     label: z.string().optional(),
     model: z.string().optional(),
     archived: z.boolean().optional(),
+    permissionMode: z.enum(['guarded', 'plan', 'acceptEdits', 'bypass']).optional(),
+    effort: z.enum(['low', 'medium', 'high', 'max']).optional(),
   }),
   /** Start a fresh agent conversation inside the session. */
   z.object({ type: z.literal('session-reset'), sessionId: z.string() }),

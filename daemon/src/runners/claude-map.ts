@@ -56,12 +56,27 @@ export function mapClaudeEvent(value: unknown): RunEvent[] {
       if (isError) {
         return [{ type: 'error', message: text || `run failed (${String(v.subtype ?? 'unknown')})` }];
       }
-      return [{ type: 'done', summary: text }];
+      const events: RunEvent[] = [{ type: 'done', summary: text }];
+      const usage = contextUsage(v.usage);
+      if (usage) events.push(usage);
+      return events;
     }
 
     default:
       return [];
   }
+}
+
+/** Context accounting from claude's result usage block. The live context is
+ * roughly input + cache-read + cache-created + output of the LAST turn. */
+function contextUsage(usage: unknown): RunEvent | null {
+  if (typeof usage !== 'object' || usage === null) return null;
+  const u = usage as Record<string, unknown>;
+  const n = (k: string) => (typeof u[k] === 'number' ? (u[k] as number) : 0);
+  const contextTokens =
+    n('input_tokens') + n('cache_read_input_tokens') + n('cache_creation_input_tokens') + n('output_tokens');
+  if (contextTokens <= 0) return null;
+  return { type: 'usage', contextTokens, contextWindow: 200_000 };
 }
 
 /** One human-readable line about what a tool call is doing. */

@@ -20,6 +20,8 @@ export interface SessionRow {
   createdAtMs: number;
   archived: boolean;
   conversationId: string | null;
+  permissionMode: 'guarded' | 'plan' | 'acceptEdits' | 'bypass';
+  effort: 'low' | 'medium' | 'high' | 'max' | null;
 }
 
 export interface WorkspaceRow {
@@ -66,6 +68,17 @@ export class Store {
     } catch {
       /* column exists */
     }
+    // Migration: per-session agent controls (added overnight build).
+    try {
+      this.db.exec(`ALTER TABLE sessions ADD COLUMN permission_mode TEXT NOT NULL DEFAULT 'guarded'`);
+    } catch {
+      /* column exists */
+    }
+    try {
+      this.db.exec(`ALTER TABLE sessions ADD COLUMN effort TEXT`);
+    } catch {
+      /* column exists */
+    }
   }
 
   // ---- sessions -------------------------------------------------------------
@@ -80,6 +93,8 @@ export class Store {
       createdAtMs: Date.now(),
       archived: false,
       conversationId: null,
+      permissionMode: 'guarded',
+      effort: null,
     };
     this.db
       .prepare(
@@ -103,6 +118,8 @@ export class Store {
       createdAtMs: Number(r.created_at_ms),
       archived: Boolean(r.archived),
       conversationId: (r.conversation_id as string | null) ?? null,
+      permissionMode: ((r.permission_mode as string | null) ?? 'guarded') as SessionRow['permissionMode'],
+      effort: ((r.effort as string | null) ?? null) as SessionRow['effort'],
     }));
   }
 
@@ -112,16 +129,16 @@ export class Store {
 
   updateSession(
     id: string,
-    patch: Partial<Pick<SessionRow, 'label' | 'model' | 'archived' | 'conversationId'>>,
+    patch: Partial<Pick<SessionRow, 'label' | 'model' | 'archived' | 'conversationId' | 'permissionMode' | 'effort'>>,
   ): void {
     const current = this.getSession(id);
     if (!current) return;
     const next = { ...current, ...patch };
     this.db
       .prepare(
-        `UPDATE sessions SET label = ?, model = ?, archived = ?, conversation_id = ? WHERE id = ?`,
+        `UPDATE sessions SET label = ?, model = ?, archived = ?, conversation_id = ?, permission_mode = ?, effort = ? WHERE id = ?`,
       )
-      .run(next.label, next.model, next.archived ? 1 : 0, next.conversationId, id);
+      .run(next.label, next.model, next.archived ? 1 : 0, next.conversationId, next.permissionMode, next.effort, id);
   }
 
   toSessionInfo(row: SessionRow, busy: boolean, queued: number): SessionInfo {
@@ -133,6 +150,8 @@ export class Store {
       label: row.label,
       createdAtMs: row.createdAtMs,
       archived: row.archived,
+      permissionMode: row.permissionMode,
+      effort: row.effort ?? undefined,
       busy,
       queuedPrompts: queued,
     };

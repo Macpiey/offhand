@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { RunEvent, ApprovalPolicy } from '@offhand/shared';
 
 export interface Verdict {
@@ -36,6 +38,16 @@ export class ApprovalBroker {
       return Promise.resolve({ approve: false, message: 'no active session to ask' });
     }
     const risk = classifyRisk(toolName, input);
+    // Reading a file the USER just attached from their phone needs no
+    // permission — they sent it to be read.
+    const filePath = (input as Record<string, unknown> | null)?.file_path;
+    if (
+      toolName === 'Read' &&
+      typeof filePath === 'string' &&
+      filePath.toLowerCase().startsWith(join(tmpdir(), 'offhand-attachments').toLowerCase())
+    ) {
+      return Promise.resolve({ approve: true });
+    }
     // AskUserQuestion is literally a question for the human — never auto-answer.
     if (this.policyProvider() === 'trusting' && risk === 'low' && toolName !== 'AskUserQuestion') {
       // Trusting workspaces: low-risk actions sail through; high-risk still asks.

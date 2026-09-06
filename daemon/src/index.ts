@@ -9,7 +9,7 @@ import { LocalSessionServer } from './local-server.js';
 import { RelayClient } from './relay-client.js';
 import { ensurePairing } from './pairing.js';
 import { ApprovalBroker } from './approvals.js';
-import { captureScreenshot, uploadArtifact } from './capture.js';
+import { captureScreenshot, uploadArtifact, downloadArtifact } from './capture.js';
 
 /**
  * offhand daemon entry point (v1).
@@ -85,6 +85,8 @@ if (relayUrl) {
   manager.capture = captureScreenshot;
   manager.uploader = (data, hint) =>
     uploadArtifact(relayUrl, pairing.sessionId, data, pairing.keys, hint);
+  manager.attachmentFetcher = (blobId) =>
+    downloadArtifact(relayUrl, pairing.sessionId, blobId, pairing.keys);
   new RelayClient(manager, relayUrl, pairing.sessionId, pairing.keys).start();
   console.log(`  relay     : ${relayUrl}`);
   console.log(`  session   : ${pairing.sessionId}`);

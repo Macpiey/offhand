@@ -74,7 +74,13 @@ export class ClaudeCodeRunner implements AgentRunner {
     const args = ['-p', run.prompt, '--output-format', 'stream-json', '--verbose', '--include-partial-messages'];
     if (run.model) args.push('--model', run.model);
     if (run.resumeConversationId) args.push('--resume', run.resumeConversationId);
-    if (this.broker && this.approvalUrl) {
+    const mode = run.permissionMode ?? 'guarded';
+    if (mode === 'bypass') {
+      // No prompts at all — the user opted out of guarding for this session.
+      args.push('--permission-mode', 'bypassPermissions');
+    } else if (this.broker && this.approvalUrl) {
+      if (mode === 'plan') args.push('--permission-mode', 'plan');
+      else if (mode === 'acceptEdits') args.push('--permission-mode', 'acceptEdits');
       const mcpConfig = {
         mcpServers: {
           offhand: {
@@ -92,11 +98,18 @@ export class ClaudeCodeRunner implements AgentRunner {
     } else {
       args.push('--permission-mode', 'acceptEdits');
     }
+    // Thinking budget tiers (0 disables extended thinking).
+    const thinking = { low: 0, medium: 8_000, high: 16_000, max: 31_999 } as const;
+    const env =
+      run.effort !== undefined
+        ? { ...process.env, MAX_THINKING_TOKENS: String(thinking[run.effort]) }
+        : process.env;
 
     try {
       child = spawn(this.resolveBin(), args, {
         cwd: run.workspace,
         stdio: ['ignore', 'pipe', 'pipe'],
+        env,
       });
     } catch (e) {
       detachBroker?.();

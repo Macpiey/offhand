@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
-import { hostname, platform } from 'node:os';
+import { hostname, platform, tmpdir } from 'node:os';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { join, basename } from 'node:path';
 import type {
   ClientMessage,
   ServerMessage,
@@ -41,6 +43,8 @@ export class SessionManager {
   /** Optional artifact plumbing (set by index when capture is possible). */
   uploader: ArtifactUploader | null = null;
   capture: CaptureFn | null = null;
+  /** Fetch + decrypt a phone-uploaded attachment blob (set by index). */
+  attachmentFetcher: ((blobId: string) => Promise<Uint8Array>) | null = null;
 
   constructor(
     readonly store: Store,
@@ -125,8 +129,25 @@ export class SessionManager {
           reply({ type: 'error', message: `unknown session ${msg.sessionId}` });
           return;
         }
+        let prompt = msg.prompt;
+        if (msg.attachments?.length && this.attachmentFetcher) {
+          try {
+            prompt += '\n\nAttached files (read them from disk):';
+            for (const a of msg.attachments) {
+              const bytes = await this.attachmentFetcher(a.blobId);
+              const dir = join(tmpdir(), 'offhand-attachments');
+              mkdirSync(dir, { recursive: true });
+              const path = join(dir, `${a.blobId.slice(0, 8)}-${basename(a.name)}`);
+              writeFileSync(path, bytes);
+              prompt += `\n- ${path} (${a.mime})`;
+            }
+          } catch (e) {
+            reply({ type: 'error', message: `attachment staging failed: ${String(e)}` });
+            return;
+          }
+        }
         const q = this.queues.get(session.id) ?? [];
-        q.push(msg.prompt);
+        q.push(prompt);
         this.queues.set(session.id, q);
         this.pump(session.id);
         await this.broadcastManifest();
@@ -159,8 +180,10 @@ export class SessionManager {
       case 'session-update':
         this.store.updateSession(msg.sessionId, {
           ...(msg.label !== undefined ? { label: msg.label } : {}),
-          ...(msg.model !== undefined ? { model: msg.model } : {}),
+          ...(msg.model !== undefined ? { model: msg.model || null } : {}),
           ...(msg.archived !== undefined ? { archived: msg.archived } : {}),
+          ...(msg.permissionMode !== undefined ? { permissionMode: msg.permissionMode } : {}),
+          ...(msg.effort !== undefined ? { effort: msg.effort } : {}),
         });
         await this.broadcastManifest();
         return;
@@ -225,6 +248,8 @@ export class SessionManager {
         workspace: session.workspace,
         ...(session.model ? { model: session.model } : {}),
         ...(session.conversationId ? { resumeConversationId: session.conversationId } : {}),
+        permissionMode: session.permissionMode,
+        ...(session.effort ? { effort: session.effort } : {}),
       },
       {
         onConversationId: (id) => this.store.updateSession(session.id, { conversationId: id }),

@@ -1,6 +1,13 @@
 <script lang="ts">
   import { voiceAvailable, listen } from '$lib/voice.js';
+  import { uploadAttachment } from '$lib/client.js';
   import Icon from './Icon.svelte';
+
+  interface Attachment {
+    blobId: string;
+    name: string;
+    mime: string;
+  }
 
   let {
     busy,
@@ -10,7 +17,7 @@
   }: {
     busy: boolean;
     queued: number;
-    onsubmit: (text: string) => void;
+    onsubmit: (text: string, attachments: Attachment[]) => void;
     onstop: () => void;
   } = $props();
 
@@ -18,7 +25,24 @@
   let listening = $state(false);
   let stopFn: (() => void) | null = null;
   let area = $state<HTMLTextAreaElement | null>(null);
+  let fileInput = $state<HTMLInputElement | null>(null);
+  let attachments = $state<Attachment[]>([]);
+  let uploading = $state(false);
   const hasVoice = voiceAvailable();
+
+  async function onFiles(e: Event): Promise<void> {
+    const files = (e.target as HTMLInputElement).files;
+    if (!files?.length) return;
+    uploading = true;
+    try {
+      for (const f of files) attachments = [...attachments, await uploadAttachment(f)];
+    } catch (err) {
+      alert(`Attachment failed: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      uploading = false;
+      if (fileInput) fileInput.value = '';
+    }
+  }
 
   function autosize(): void {
     if (!area) return;
@@ -29,9 +53,10 @@
   function submit(e?: Event): void {
     e?.preventDefault();
     const t = text.trim();
-    if (!t) return;
-    onsubmit(t);
+    if (!t && attachments.length === 0) return;
+    onsubmit(t || 'See the attached file(s).', attachments);
     text = '';
+    attachments = [];
     requestAnimationFrame(autosize);
   }
 
@@ -69,8 +94,28 @@
       <button class="stop" onclick={onstop}><Icon name="stop" size={12} />Stop</button>
     </div>
   {/if}
+  {#if attachments.length > 0 || uploading}
+    <div class="attach-row">
+      {#each attachments as a, i (a.blobId)}
+        <span class="attach-chip">
+          <Icon name={a.mime.startsWith('image/') ? 'camera' : 'copy'} size={12} />
+          {a.name}
+          <button
+            type="button"
+            class="rm"
+            onclick={() => (attachments = attachments.filter((_, n) => n !== i))}
+            aria-label="Remove attachment"><Icon name="x" size={11} /></button>
+        </span>
+      {/each}
+      {#if uploading}<span class="attach-chip dim">Encrypting…</span>{/if}
+    </div>
+  {/if}
   <form onsubmit={submit}>
     <div class="field">
+      <input type="file" multiple hidden bind:this={fileInput} onchange={onFiles} />
+      <button type="button" class="mic attach" onclick={() => fileInput?.click()} aria-label="Attach file">
+        <Icon name="plus" size={18} />
+      </button>
       <textarea
         bind:this={area}
         bind:value={text}
@@ -84,7 +129,7 @@
           <Icon name="mic" size={17} />
         </button>
       {/if}
-      <button type="submit" class="send" disabled={!text.trim()} aria-label="Send">
+      <button type="submit" class="send" disabled={(!text.trim() && attachments.length === 0) || uploading} aria-label="Send">
         <Icon name="send" size={17} stroke={2.2} />
       </button>
     </div>
@@ -147,5 +192,23 @@
   .mic { background: transparent; color: var(--mute); }
   .mic:active { background: var(--raised); }
   .mic.listening { background: var(--risk); color: #fff; animation: pulse 1.3s infinite; }
+  .attach { align-self: flex-end; margin-left: -0.55rem; }
   .send { background: var(--brand); }
+  .attach-row { display: flex; flex-wrap: wrap; gap: 0.35rem; padding: 0 0.25rem 0.5rem; }
+  .attach-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    background: var(--card);
+    border: 1px solid var(--hairline-2);
+    border-radius: 999px;
+    padding: 0.25rem 0.4rem 0.25rem 0.7rem;
+    font-size: 12px;
+    color: var(--mute);
+    max-width: 240px;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+  .attach-chip.dim { color: var(--ghost); padding-right: 0.7rem; }
+  .rm { width: 20px; height: 20px; padding: 0; border-radius: 50%; background: var(--raised); color: var(--mute); }
 </style>

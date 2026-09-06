@@ -9,6 +9,7 @@ import {
   seal,
   open,
   openBytes,
+  sealBytes,
   toB64u,
   fromB64u,
   EnvelopeSchema,
@@ -345,6 +346,21 @@ export async function fetchArtifact(blobId: string): Promise<Uint8Array> {
   );
   if (!res.ok) throw new Error(`fetch ${res.status}`);
   return openBytes(new Uint8Array(await res.arrayBuffer()), keys.rx); // decrypted locally
+}
+
+/** Encrypt + upload a file for the daemon to stage as a prompt attachment. */
+export async function uploadAttachment(file: File): Promise<{ blobId: string; name: string; mime: string }> {
+  if (!keys) throw new Error('not paired');
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const sealed = sealBytes(bytes, keys.tx);
+  const res = await fetch(`${relayHttpUrl}/artifacts/${encodeURIComponent(blobSession)}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/octet-stream', 'x-content-hint': file.type || 'application/octet-stream' },
+    body: sealed as unknown as BodyInit,
+  });
+  if (!res.ok) throw new Error(`upload ${res.status}`);
+  const { blobId } = (await res.json()) as { blobId: string };
+  return { blobId, name: file.name, mime: file.type || 'application/octet-stream' };
 }
 
 // ---- approvals ------------------------------------------------------------------

@@ -1,4 +1,4 @@
-import { sealBytes, type SessionKeys } from '@offhand/shared';
+import { sealBytes, openBytes, type SessionKeys } from '@offhand/shared';
 
 /**
  * M5 artifact pipeline: Playwright screenshot of the workspace's dev URL →
@@ -37,4 +37,18 @@ export async function uploadArtifact(
   if (!res.ok) throw new Error(`artifact upload failed: ${res.status}`);
   const body = (await res.json()) as { blobId: string };
   return body.blobId;
+}
+
+/** Fetch + decrypt a blob the PHONE uploaded (phone tx == daemon rx). */
+export async function downloadArtifact(
+  relayUrl: string,
+  sessionId: string,
+  blobId: string,
+  keys: SessionKeys,
+): Promise<Uint8Array> {
+  const res = await fetch(
+    `${relayUrl.replace(/\/$/, '')}/artifacts/${encodeURIComponent(sessionId)}/${encodeURIComponent(blobId)}`,
+  );
+  if (!res.ok) throw new Error(`artifact download failed: ${res.status}`);
+  return openBytes(new Uint8Array(await res.arrayBuffer()), keys.rx);
 }
