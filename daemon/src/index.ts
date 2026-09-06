@@ -10,6 +10,7 @@ import { RelayClient } from './relay-client.js';
 import { ensurePairing } from './pairing.js';
 import { ApprovalBroker } from './approvals.js';
 import { captureScreenshot, uploadArtifact, downloadArtifact } from './capture.js';
+import { dropOutboxDir, queueDropFileForPhone, startDropOutboxWatcher } from './drop.js';
 
 /**
  * offhand daemon entry point (v1).
@@ -21,6 +22,22 @@ import { captureScreenshot, uploadArtifact, downloadArtifact } from './capture.j
  * transcripts, and search live there too. The relay stores nothing.
  */
 const args = process.argv.slice(2);
+if (args[0] === 'drop') {
+  const source = args[1];
+  if (!source) {
+    console.error('usage: offhand drop <file>');
+    process.exit(1);
+  }
+  try {
+    queueDropFileForPhone(source);
+    console.log('queued for phone');
+    process.exit(0);
+  } catch (e) {
+    console.error(`drop: ${e instanceof Error ? e.message : String(e)}`);
+    process.exit(1);
+  }
+}
+
 function argValues(flag: string): string[] {
   const out: string[] = [];
   for (let i = 0; i < args.length; i++) {
@@ -87,7 +104,9 @@ if (relayUrl) {
     uploadArtifact(relayUrl, pairing.sessionId, data, pairing.keys, hint);
   manager.attachmentFetcher = (blobId) =>
     downloadArtifact(relayUrl, pairing.sessionId, blobId, pairing.keys);
+  manager.dropFetcher = manager.attachmentFetcher;
   new RelayClient(manager, relayUrl, pairing.sessionId, pairing.keys).start();
+  startDropOutboxWatcher(dropOutboxDir(), (path) => manager.sendDropToPhone(path));
   console.log(`  relay     : ${relayUrl}`);
   console.log(`  session   : ${pairing.sessionId}`);
   console.log(`  E2E SAS   : ${pairing.sas}  (must match the phone)`);

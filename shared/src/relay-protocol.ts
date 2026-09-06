@@ -22,7 +22,7 @@ export const RelayFrameSchema = z.discriminatedUnion('kind', [
    * ONLY an opaque approval id — never content (push bodies transit
    * Apple/Google; 02-architecture.md).
    */
-  z.object({ kind: z.literal('notify'), notice: z.literal('approval'), id: z.string() }),
+  z.object({ kind: z.literal('notify'), notice: z.enum(['approval', 'drop']), id: z.string().optional() }),
   /** relay → daemon: verdict delivered via push-notification action button. */
   z.object({ kind: z.literal('verdict'), approvalId: z.string(), approve: z.boolean() }),
   z.object({ kind: z.literal('ping') }),

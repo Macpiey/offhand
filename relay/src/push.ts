@@ -37,23 +37,32 @@ export class PushService {
     m.set(subscription.endpoint, subscription);
   }
 
-  /** Send an approval notification to every subscribed phone of a session. */
-  async notifyApproval(sessionId: string, approvalId: string): Promise<number> {
+  private async send(sessionId: string, payload: unknown): Promise<number> {
     const m = this.subs.get(sessionId);
     if (!m) return 0;
-    // RENDER_EXTERNAL_URL is set automatically on Render; the SW posts
-    // verdicts back to this origin.
-    const relayUrl = (process.env.RENDER_EXTERNAL_URL ?? 'http://127.0.0.1:8787').replace(/\/$/, '');
-    const payload = JSON.stringify({ kind: 'approval', approvalId, session: sessionId, relayUrl });
     let sent = 0;
     for (const [endpoint, sub] of m) {
       try {
-        await webpush.sendNotification(sub, payload, { TTL: 600, urgency: 'high' });
+        await webpush.sendNotification(sub, JSON.stringify(payload), { TTL: 600, urgency: 'high' });
         sent++;
       } catch {
         m.delete(endpoint); // stale subscription — drop it
       }
     }
     return sent;
+  }
+
+  /** Send an approval notification to every subscribed phone of a session. */
+  async notifyApproval(sessionId: string, approvalId: string): Promise<number> {
+    // RENDER_EXTERNAL_URL is set automatically on Render; the SW posts
+    // verdicts back to this origin.
+    const relayUrl = (process.env.RENDER_EXTERNAL_URL ?? 'http://127.0.0.1:8787').replace(/\/$/, '');
+    return this.send(sessionId, { kind: 'approval', approvalId, session: sessionId, relayUrl });
+  }
+
+  /** Send a content-free drop nudge to every subscribed phone of a session. */
+  async notifyDrop(sessionId: string): Promise<number> {
+    const relayUrl = (process.env.RENDER_EXTERNAL_URL ?? 'http://127.0.0.1:8787').replace(/\/$/, '');
+    return this.send(sessionId, { kind: 'drop', session: sessionId, relayUrl });
   }
 }

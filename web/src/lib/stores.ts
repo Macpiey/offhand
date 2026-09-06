@@ -38,6 +38,16 @@ export interface ConnState {
   host: HostInfo | null;
 }
 
+export interface DropItem {
+  seq: number;
+  blobId: string;
+  name: string;
+  mime: string;
+  size: number;
+  direction: 'to-phone' | 'to-pc';
+  atMs: number;
+}
+
 export const conn = writable<ConnState>({
   phase: 'boot',
   daemonOnline: false,
@@ -66,9 +76,13 @@ export const drawerOpen = writable(false);
 export const newSessionOpen = writable(false);
 /** sessionId → last reported context usage (from the agent CLI). */
 export const usageBySession = writable<Map<string, { contextTokens: number; contextWindow: number }>>(new Map());
+export const drops = writable<DropItem[]>(loadDrops());
 
 currentSessionId.subscribe((id) => {
   if (typeof localStorage !== 'undefined' && id) localStorage.setItem('offhand.currentSession', id);
+});
+drops.subscribe((items) => {
+  if (typeof localStorage !== 'undefined') localStorage.setItem('offhand.drops', JSON.stringify(items.slice(0, 100)));
 });
 
 export function mutateTranscript(
@@ -89,6 +103,13 @@ export function recomputeWaiting(): void {
     if (items.some((i) => i.kind === 'approval' && i.resolved === null)) set.add(sid);
   }
   waiting.set(set);
+}
+
+export function addDrop(drop: Omit<DropItem, 'atMs'>): void {
+  drops.update((items) => {
+    if (items.some((d) => d.seq === drop.seq)) return items;
+    return [...items, { ...drop, atMs: Date.now() }].sort((a, b) => b.seq - a.seq);
+  });
 }
 
 /** Convert a seq-logged server message into a transcript row (or null). */
@@ -149,3 +170,13 @@ export function toItems(msg: ServerMessage): { sessionId: string; items: Transcr
 }
 
 export type { ClientMessage, ServerMessage };
+
+function loadDrops(): DropItem[] {
+  if (typeof localStorage === 'undefined') return [];
+  try {
+    const raw = JSON.parse(localStorage.getItem('offhand.drops') ?? '[]') as DropItem[];
+    return raw.filter((d) => typeof d.seq === 'number' && typeof d.blobId === 'string');
+  } catch {
+    return [];
+  }
+}

@@ -125,6 +125,18 @@ export function buildApp(opts: { logger?: unknown } = {}): FastifyInstance {
     return { ok: true };
   });
 
+  const DropPushSchema = z.object({
+    session: z.string().min(SESSION_ID_MIN_LENGTH),
+  });
+
+  app.post('/push/drop', async (req, reply) => {
+    const parsed = DropPushSchema.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: 'bad drop push' });
+    const sent = await push.notifyDrop(parsed.data.session);
+    req.log.info({ session: parsed.data.session.slice(0, 6), sent }, 'drop push notify');
+    return { ok: true, sent };
+  });
+
   // ---- pairing (M3) -------------------------------------------------------
   // Phone answers a pairing token with its PUBLIC key; daemon polls for it.
   // The relay learns only the public key — useless without the secret keys
@@ -271,9 +283,16 @@ export function buildApp(opts: { logger?: unknown } = {}): FastifyInstance {
           case 'notify': {
             // Daemon asks for a push; only opaque ids ever reach Apple/Google.
             if (role !== 'daemon') return;
-            void push.notifyApproval(sessionId, frame.id).then((sent) => {
-              f.log.info({ session: sidLog, sent }, 'push notify');
-            });
+            if (frame.notice === 'approval') {
+              if (!frame.id) return;
+              void push.notifyApproval(sessionId, frame.id).then((sent) => {
+                f.log.info({ session: sidLog, sent }, 'push notify');
+              });
+            } else {
+              void push.notifyDrop(sessionId).then((sent) => {
+                f.log.info({ session: sidLog, sent }, 'drop push notify');
+              });
+            }
             return;
           }
           case 'peer': {

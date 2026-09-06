@@ -88,16 +88,21 @@
         </span>
       </div>
       <div class="rail-list"><SessionList /></div>
-      <a class="rail-settings" href="/settings" class:active={$page.url.pathname === '/settings'}>
-        <Icon name="settings" size={17} /> Settings
-      </a>
+      <div class="rail-links">
+        <a class="rail-link" href="/drops" class:active={$page.url.pathname === '/drops'}>
+          <Icon name="inbox" size={17} /> Drops
+        </a>
+        <a class="rail-link" href="/settings" class:active={$page.url.pathname === '/settings'}>
+          <Icon name="settings" size={17} /> Settings
+        </a>
+      </div>
     </aside>
 
     <div class="frame">
       {#if $page.url.pathname !== '/session'}
         <header>
           <MenuButton />
-          <span class="brand">{$page.url.pathname === '/settings' ? 'Settings' : 'offhand'}</span>
+          <span class="brand">{$page.url.pathname === '/settings' ? 'Settings' : $page.url.pathname === '/drops' ? 'Drops' : 'offhand'}</span>
           <span class="conn" class:off={$conn.phase !== 'connected' || !$conn.daemonOnline}>
             <span class="dot"></span>
             {$conn.phase !== 'connected' ? 'Connecting' : !$conn.daemonOnline ? 'Offline' : ($conn.host?.hostname ?? 'Connected')}
@@ -285,11 +290,11 @@
       padding: 0.35rem 1.1rem 0.8rem;
     }
     .rail-list { flex: 1; overflow-y: auto; padding: 0 0.8rem; }
-    .rail-settings {
+    .rail-links { display: flex; flex-direction: column; gap: 0.15rem; margin: 0.6rem 0.8rem 0; }
+    .rail-link {
       display: flex;
       align-items: center;
       gap: 0.5rem;
-      margin: 0.6rem 0.8rem 0;
       padding: 0.6rem 0.9rem;
       border-radius: var(--r-ctl);
       color: var(--mute);
@@ -297,7 +302,7 @@
       font-size: 13.5px;
       font-weight: 600;
     }
-    .rail-settings:hover, .rail-settings.active { background: var(--card); color: var(--ink); }
+    .rail-link:hover, .rail-link.active { background: var(--card); color: var(--ink); }
     .frame header { display: none; }
     main { padding-top: var(--inset-t); }
   }

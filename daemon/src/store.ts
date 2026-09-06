@@ -263,6 +263,8 @@ function searchableText(msg: ServerMessage): string {
       if (msg.event.type === 'done') return msg.event.summary;
       if (msg.event.type === 'error') return msg.event.message;
       return '';
+    case 'drop':
+      return msg.name;
     default:
       return '';
   }

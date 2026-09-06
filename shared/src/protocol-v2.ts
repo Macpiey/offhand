@@ -54,6 +54,13 @@ export const ClientMessageSchema = z.discriminatedUnion('type', [
     answer: z.string().optional(),
   }),
   z.object({ type: z.literal('resume'), afterSeq: z.number().int().nonnegative() }),
+  z.object({
+    type: z.literal('drop-send'),
+    blobId: z.string(),
+    name: z.string(),
+    mime: z.string(),
+    size: z.number().int().nonnegative(),
+  }),
   /** Ask for hello + manifest (sent by clients on every connect). */
   z.object({ type: z.literal('sync') }),
 
@@ -170,6 +177,15 @@ export const ServerMessageSchema = z.discriminatedUnion('type', [
     sessionId: z.string(),
     seq: z.number().int(),
     receipt: ReceiptSchema,
+  }),
+  z.object({
+    type: z.literal('drop'),
+    seq: z.number().int(),
+    blobId: z.string(),
+    name: z.string(),
+    mime: z.string(),
+    size: z.number().int().nonnegative(),
+    direction: z.enum(['to-phone', 'to-pc']),
   }),
 
   // RPC responses (not seq-logged)

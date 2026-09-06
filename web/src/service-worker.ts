@@ -93,6 +93,16 @@ sw.addEventListener('push', (event) => {
   } catch {
     /* ignore */
   }
+  if (data.kind === 'drop') {
+    event.waitUntil(
+      sw.registration.showNotification('offhand — file arrived', {
+        body: 'Open offhand to save or share it.',
+        tag: 'offhand-drop',
+        data,
+      }),
+    );
+    return;
+  }
   if (data.kind !== 'approval') return;
   event.waitUntil(
     sw.registration.showNotification('offhand — approval waiting', {
@@ -130,11 +140,16 @@ sw.addEventListener('notificationclick', (event) => {
   }
 
   event.waitUntil(
-    sw.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
+    sw.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(async (list) => {
+      const target = data.kind === 'drop' ? '/drops' : '/';
       for (const client of list) {
-        if ('focus' in client) return client.focus();
+        if ('focus' in client) {
+          const windowClient =
+            data.kind === 'drop' && 'navigate' in client ? await client.navigate(target) : client;
+          return windowClient?.focus();
+        }
       }
-      return sw.clients.openWindow('/');
+      return sw.clients.openWindow(target);
     }),
   );
 });

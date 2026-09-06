@@ -15,11 +15,16 @@ import type { AgentRunner, RunHandle } from './runner.js';
 import { Store, type SessionRow } from './store.js';
 import { workspaceInfo, buildReceipt, shouldScreenshot } from './receipts.js';
 import { listClaudeConversations } from './claude-history.js';
+import { DROP_LOG_SESSION_ID, readOutgoingDrop, saveIncomingDrop, showDropToast } from './drop.js';
 
 export type Sink = (msg: ServerMessage) => void;
 
 export interface ArtifactUploader {
   (data: Uint8Array, contentHint: string): Promise<string>; // returns blobId
+}
+
+export interface ArtifactFetcher {
+  (blobId: string): Promise<Uint8Array>;
 }
 
 export interface CaptureFn {
@@ -46,7 +51,9 @@ export class SessionManager {
   uploader: ArtifactUploader | null = null;
   capture: CaptureFn | null = null;
   /** Fetch + decrypt a phone-uploaded attachment blob (set by index). */
-  attachmentFetcher: ((blobId: string) => Promise<Uint8Array>) | null = null;
+  attachmentFetcher: ArtifactFetcher | null = null;
+  /** Fetch + decrypt a phone-uploaded Drop blob (set by index). */
+  dropFetcher: ArtifactFetcher | null = null;
 
   constructor(
     readonly store: Store,
@@ -155,6 +162,29 @@ export class SessionManager {
         await this.broadcastManifest();
         return;
       }
+      case 'drop-send': {
+        if (!this.dropFetcher) {
+          reply({ type: 'error', message: 'drop unavailable: daemon is not connected to a relay' });
+          return;
+        }
+        try {
+          const bytes = await this.dropFetcher(msg.blobId);
+          const savedPath = saveIncomingDrop(msg.name, bytes);
+          showDropToast(savedPath);
+          this.record(DROP_LOG_SESSION_ID, (seq) => ({
+            type: 'drop',
+            seq,
+            blobId: msg.blobId,
+            name: msg.name,
+            mime: msg.mime,
+            size: msg.size,
+            direction: 'to-pc',
+          }));
+        } catch (e) {
+          reply({ type: 'error', message: `drop failed: ${e instanceof Error ? e.message : String(e)}` });
+        }
+        return;
+      }
       case 'cancel':
         this.active.get(msg.sessionId)?.cancel();
         this.queues.set(msg.sessionId, []);
@@ -230,6 +260,21 @@ export class SessionManager {
         reply({ type: 'fs-response', rpcId: msg.rpcId, ...listFolders(msg.path) });
         return;
     }
+  }
+
+  async sendDropToPhone(path: string): Promise<void> {
+    if (!this.uploader) throw new Error('drop upload unavailable: start daemon with --relay');
+    const file = readOutgoingDrop(path);
+    const blobId = await this.uploader(file.bytes, file.mime);
+    this.record(DROP_LOG_SESSION_ID, (seq) => ({
+      type: 'drop',
+      seq,
+      blobId,
+      name: file.name,
+      mime: file.mime,
+      size: file.size,
+      direction: 'to-phone',
+    }));
   }
 
   // ---- run execution -------------------------------------------------------------

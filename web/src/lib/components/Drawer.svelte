@@ -68,6 +68,9 @@
       <button class="link" class:active={$page.url.pathname === '/'} onclick={() => nav('/')}>
         <Icon name="home" size={17} /> Overview
       </button>
+      <button class="link" class:active={$page.url.pathname === '/drops'} onclick={() => nav('/drops')}>
+        <Icon name="inbox" size={17} /> Drops
+      </button>
       <button class="link" class:active={$page.url.pathname === '/settings'} onclick={() => nav('/settings')}>
         <Icon name="settings" size={17} /> Settings
       </button>

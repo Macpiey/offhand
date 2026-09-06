@@ -67,6 +67,9 @@ export class RelayClient {
             } satisfies RelayFrame),
           );
         }
+        if (msg.type === 'drop' && msg.direction === 'to-phone') {
+          ws.send(JSON.stringify({ kind: 'notify', notice: 'drop' } satisfies RelayFrame));
+        }
       }
     };
 

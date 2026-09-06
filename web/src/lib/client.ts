@@ -29,6 +29,7 @@ import {
   transcripts,
   currentSessionId,
   justPaired,
+  addDrop,
   mutateTranscript,
   recomputeWaiting,
   toItems,
@@ -50,6 +51,7 @@ export interface StoredPairing {
 }
 
 const PAIRING_KEY = 'offhand.pairing';
+const SEQ_KEY = 'offhand.lastSeq';
 export const DEFAULT_RELAY_URL = 'https://offhand-relay.onrender.com';
 
 let ws: WebSocket | null = null;
@@ -57,7 +59,7 @@ let keys: SessionKeys | null = null;
 let wsUrl = '';
 let relayHttpUrl = '';
 let blobSession = '';
-let lastSeq = -1; // -1 = never synced; fast-forward on first hello
+let lastSeq = loadLastSeq(); // -1 = never synced; fast-forward on first hello
 let retryMs = 500;
 let lastMessageAt = 0;
 const rpcWaiters = new Map<string, (msg: ServerMessage) => void>();
@@ -70,6 +72,7 @@ export function loadPairing(): StoredPairing | null {
 
 export function unpair(): void {
   localStorage.removeItem(PAIRING_KEY);
+  localStorage.removeItem(SEQ_KEY);
   location.href = '/';
 }
 
@@ -197,7 +200,7 @@ function handleServer(msg: ServerMessage): void {
   switch (msg.type) {
     case 'hello':
       conn.update((c) => ({ ...c, host: msg.host, daemonOnline: true }));
-      if (lastSeq < 0) lastSeq = msg.lastSeq; // fast-forward; history is paged in
+      if (lastSeq < 0) setLastSeq(msg.lastSeq); // fast-forward; history is paged in
       else if (msg.lastSeq > lastSeq) send({ type: 'resume', afterSeq: lastSeq });
       return;
     case 'manifest':
@@ -216,14 +219,14 @@ function handleServer(msg: ServerMessage): void {
       // Surface global errors into the current session view.
       mutateTranscript(get(currentSessionId) || 'global', (items) => [
         ...items,
-        { kind: 'error', seq: ++lastSeq, message: msg.message },
+        { kind: 'error', seq: setLastSeq(lastSeq + 1), message: msg.message },
       ]);
       return;
     default: {
       // Seq-logged stream
       if ('seq' in msg) {
         if (msg.seq <= lastSeq) return; // replay dedupe
-        lastSeq = msg.seq;
+        setLastSeq(msg.seq);
       }
       applyLogged(msg);
     }
@@ -231,6 +234,17 @@ function handleServer(msg: ServerMessage): void {
 }
 
 function applyLogged(msg: ServerMessage): void {
+  if (msg.type === 'drop') {
+    addDrop({
+      seq: msg.seq,
+      blobId: msg.blobId,
+      name: msg.name,
+      mime: msg.mime,
+      size: msg.size,
+      direction: msg.direction,
+    });
+    return;
+  }
   if (msg.type === 'run-event' && msg.event.type === 'approval-result') {
     const { id, approve, answer } = msg.event;
     mutateTranscript(msg.sessionId, (items) =>
@@ -391,6 +405,12 @@ export async function uploadAttachment(file: File): Promise<{ blobId: string; na
   return { blobId, name: file.name, mime: file.type || 'application/octet-stream' };
 }
 
+export async function sendDrop(file: File): Promise<{ blobId: string; name: string; mime: string; size: number }> {
+  const uploaded = await uploadAttachment(file);
+  send({ type: 'drop-send', ...uploaded, size: file.size });
+  return { ...uploaded, size: file.size };
+}
+
 // ---- approvals ------------------------------------------------------------------
 
 export function answerApproval(sessionId: string, approvalId: string, approve: boolean, answer?: string): void {
@@ -431,4 +451,16 @@ if (typeof document !== 'undefined') {
       }
     }, 4000);
   });
+}
+
+function loadLastSeq(): number {
+  if (typeof localStorage === 'undefined') return -1;
+  const raw = Number(localStorage.getItem(SEQ_KEY));
+  return Number.isFinite(raw) && raw >= 0 ? raw : -1;
+}
+
+function setLastSeq(seq: number): number {
+  lastSeq = seq;
+  if (typeof localStorage !== 'undefined') localStorage.setItem(SEQ_KEY, String(seq));
+  return seq;
 }
