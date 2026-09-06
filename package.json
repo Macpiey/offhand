@@ -17,7 +17,10 @@
     "daemon": "pnpm --filter @offhand/daemon dev",
     "web": "pnpm --filter @offhand/web dev",
     "test": "pnpm -r test",
-    "typecheck": "pnpm -r typecheck"
+    "typecheck": "pnpm -r typecheck",
+    "deploy:web": "pnpm --filter @offhand/web build && node scripts/deploy.mjs web",
+    "deploy:relay": "node scripts/deploy.mjs relay",
+    "deploy": "pnpm --filter @offhand/web build && node scripts/deploy.mjs all"
   },
   "devDependencies": {}
 }
