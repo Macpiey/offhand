@@ -102,7 +102,7 @@
 <style>
   .composer {
     flex-shrink: 0;
-    padding: 0.35rem 1rem calc(var(--inset-b) + var(--kb, 0px));
+    padding: 0.35rem 1rem var(--inset-b);
     transition: padding-bottom 0.15s ease-out;
   }
   .chips { display: flex; gap: 0.4rem; overflow-x: auto; padding-bottom: 0.5rem; }

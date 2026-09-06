@@ -18,18 +18,18 @@
     if ('serviceWorker' in navigator) void navigator.serviceWorker.register('/sw.js');
     boot().catch((e) => (bootError = e instanceof Error ? e.message : String(e)));
 
-    // Keyboard-aware composer: expose the keyboard overlap as a CSS var.
+    // Keyboard handling, done properly for iOS: pin the app frame to the
+    // VISUAL viewport. The frame shrinks to end exactly at the keyboard's top
+    // edge, and the layout viewport is never allowed to scroll (iOS shoves it
+    // around to "help" show the focused input — that's what caused floating
+    // bars and dead gaps).
     const vv = window.visualViewport;
     if (vv) {
       const update = () => {
         const kb = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
-        document.documentElement.style.setProperty('--kb', `${kb}px`);
-        // iOS leaves the layout viewport scrolled after the keyboard closes,
-        // which floats every position:fixed element ~100pt above the screen
-        // bottom (nav bar / sheets hovering mid-air). Snap it back.
-        if (kb < 2 && (window.scrollY !== 0 || document.documentElement.scrollTop !== 0)) {
-          window.scrollTo(0, 0);
-        }
+        document.documentElement.style.setProperty('--vvh', `${vv.height}px`);
+        document.documentElement.classList.toggle('kb-open', kb > 40);
+        if (window.scrollY !== 0 || document.documentElement.scrollTop !== 0) window.scrollTo(0, 0);
       };
       vv.addEventListener('resize', update);
       vv.addEventListener('scroll', update);
@@ -201,9 +201,17 @@
 
   .app {
     position: fixed;
-    inset: 0;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: var(--vvh, 100%);
     display: flex;
   }
+  /* Keyboard open: home-indicator inset is irrelevant (keyboard covers it)
+     and the tab bar just wastes the little space left — the composer owns
+     the bottom edge. */
+  :global(html.kb-open) { --inset-b: 6px; }
+  :global(html.kb-open) nav { display: none; }
   .rail { display: none; }
   .frame {
     flex: 1;

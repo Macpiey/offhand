@@ -112,6 +112,8 @@
     display: flex;
     align-items: flex-end;
     justify-content: center;
+    /* Keep the sheet above the iOS keyboard when an input inside has focus. */
+    padding-bottom: calc(100dvh - var(--vvh, 100dvh));
   }
   .sheet {
     width: 100%;

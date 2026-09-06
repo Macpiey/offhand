@@ -15,8 +15,11 @@
   const high = $derived(approval.risk === 'high');
   const question = $derived(approval.question);
 
-  // Question sheets: selection state (radio or checkboxes for multiSelect).
+  // Question sheets: selection state (radio or checkboxes for multiSelect),
+  // plus the same "Other" free-text escape hatch the agent's own TUI offers.
   let picked = $state<Set<number>>(new Set());
+  let other = $state(false);
+  let otherText = $state('');
   function toggle(n: number): void {
     const next = new Set(picked);
     if (question?.multiSelect) {
@@ -25,12 +28,19 @@
     } else {
       next.clear();
       next.add(n);
+      other = false;
     }
     picked = next;
   }
+  function pickOther(): void {
+    other = !other;
+    if (other && !question?.multiSelect) picked = new Set();
+  }
+  const canAnswer = $derived(picked.size > 0 || (other && otherText.trim() !== ''));
   function submitAnswer(): void {
-    if (!question || picked.size === 0) return;
+    if (!question || !canAnswer) return;
     const labels = [...picked].sort((a, b) => a - b).map((n) => question.options[n]!.label);
+    if (other && otherText.trim()) labels.push(otherText.trim());
     if ('vibrate' in navigator) navigator.vibrate?.(12);
     answerApproval(sessionId, approval.approvalId, true, labels.join('; '));
   }
@@ -95,10 +105,29 @@
           </span>
         </button>
       {/each}
+      <button class="opt" class:sel={other} onclick={pickOther}>
+        <span class="mark" class:on={other} class:box={question.multiSelect}>
+          {#if other && question.multiSelect}<Icon name="check" size={11} stroke={2.5} />{/if}
+        </span>
+        <span class="opt-copy">
+          <span class="opt-label">Other</span>
+          <span class="opt-desc">Type your own answer</span>
+        </span>
+      </button>
+      {#if other}
+        <!-- svelte-ignore a11y_autofocus -->
+        <textarea
+          class="other-input"
+          rows="2"
+          placeholder="Your answer…"
+          autofocus
+          bind:value={otherText}
+        ></textarea>
+      {/if}
     </div>
     <div class="actions">
       <button class="deny" onclick={() => answerApproval(sessionId, approval.approvalId, false)}>Dismiss</button>
-      <button class="approve" disabled={picked.size === 0} onclick={submitAnswer}>Answer</button>
+      <button class="approve" disabled={!canAnswer} onclick={submitAnswer}>Answer</button>
     </div>
   {:else}
   <div class="head">
@@ -152,7 +181,8 @@
     position: fixed;
     left: 50%;
     transform: translateX(-50%);
-    bottom: 0;
+    /* Sits on the keyboard's top edge when it's open (100dvh − visual height). */
+    bottom: calc(100dvh - var(--vvh, 100dvh));
     z-index: 31;
     width: 100%;
     max-width: 560px;
@@ -239,6 +269,13 @@
   .opt-copy { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
   .opt-label { font-size: 14.5px; font-weight: 600; }
   .opt-desc { font-size: 12px; color: var(--mute); line-height: 1.4; font-weight: 400; }
+  .other-input {
+    resize: none;
+    background: var(--bg);
+    border: 1px solid var(--brand);
+    border-radius: 12px;
+    font-size: 14.5px;
+  }
   .actions { display: flex; gap: 0.6rem; }
   .deny {
     flex: 1;
