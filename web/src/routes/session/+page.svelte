@@ -6,6 +6,7 @@
   import ReceiptCard from '$lib/components/ReceiptCard.svelte';
   import Composer from '$lib/components/Composer.svelte';
   import ApprovalSheet from '$lib/components/ApprovalSheet.svelte';
+  import MenuButton from '$lib/components/MenuButton.svelte';
   import Icon from '$lib/components/Icon.svelte';
 
   let scroller = $state<HTMLElement | null>(null);
@@ -98,6 +99,7 @@
 {:else}
   <div class="context">
     <div class="ctx-row">
+      <MenuButton />
       <div class="select-wrap">
         <select value={session.id} onchange={(e) => currentSessionId.set((e.target as HTMLSelectElement).value)}>
           {#each live as s (s.id)}<option value={s.id}>{s.label}</option>{/each}

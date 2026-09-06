@@ -5,7 +5,7 @@
  */
 export async function setupPush(relayUrl: string, session: string): Promise<void> {
   if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
-  const reg = await navigator.serviceWorker.register('/sw.js');
+  const reg = await navigator.serviceWorker.ready; // SvelteKit-registered worker
 
   if (Notification.permission !== 'granted') return; // UI offers a button elsewhere
   await subscribe(reg, relayUrl, session);
@@ -15,7 +15,7 @@ export async function requestPushPermission(relayUrl: string, session: string): 
   if (!('serviceWorker' in navigator) || !('PushManager' in window)) return false;
   const perm = await Notification.requestPermission();
   if (perm !== 'granted') return false;
-  const reg = await navigator.serviceWorker.register('/sw.js');
+  const reg = await navigator.serviceWorker.ready;
   await subscribe(reg, relayUrl, session);
   return true;
 }

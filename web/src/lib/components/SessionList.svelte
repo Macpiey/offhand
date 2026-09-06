@@ -5,10 +5,13 @@
   import { send } from '$lib/client.js';
   import Icon from './Icon.svelte';
 
+  let { onNavigate }: { onNavigate?: () => void } = $props();
+
   const live = $derived($sessions.filter((s) => !s.archived));
 
   function openSession(id: string): void {
     currentSessionId.set(id);
+    onNavigate?.();
     void goto('/session');
   }
 

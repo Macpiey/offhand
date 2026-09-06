@@ -181,8 +181,8 @@
     position: fixed;
     left: 50%;
     transform: translateX(-50%);
-    /* Sits on the keyboard's top edge when it's open (100dvh − visual height). */
-    bottom: calc(100dvh - var(--vvh, 100dvh));
+    /* Sits on the keyboard's top edge when it's open (tracks the visual viewport). */
+    bottom: calc(100dvh - var(--vvh, 100dvh) - var(--vvo, 0px));
     z-index: 31;
     width: 100%;
     max-width: 560px;

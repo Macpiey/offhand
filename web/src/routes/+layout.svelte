@@ -2,11 +2,13 @@
   import { onMount } from 'svelte';
   import { page } from '$app/stores';
   import { boot } from '$lib/client.js';
-  import { conn, waiting, justPaired } from '$lib/stores.js';
+  import { conn, justPaired } from '$lib/stores.js';
   import PairScreen from '$lib/components/PairScreen.svelte';
   import Onboarding from '$lib/components/Onboarding.svelte';
   import VerifyPairing from '$lib/components/VerifyPairing.svelte';
   import SessionList from '$lib/components/SessionList.svelte';
+  import Drawer from '$lib/components/Drawer.svelte';
+  import MenuButton from '$lib/components/MenuButton.svelte';
   import Icon from '$lib/components/Icon.svelte';
 
   let { children } = $props();
@@ -15,25 +17,40 @@
 
   onMount(() => {
     onboarded = localStorage.getItem('offhand.onboarded') === '1';
-    if ('serviceWorker' in navigator) void navigator.serviceWorker.register('/sw.js');
+    // SvelteKit auto-registers src/service-worker.ts; clean up the legacy
+    // hand-registered /sw.js worker if one is still installed.
+    void navigator.serviceWorker?.getRegistrations?.().then((regs) => {
+      for (const r of regs) {
+        if (r.active?.scriptURL.endsWith('/sw.js')) void r.unregister();
+      }
+    });
     boot().catch((e) => (bootError = e instanceof Error ? e.message : String(e)));
 
-    // Keyboard handling, done properly for iOS: pin the app frame to the
-    // VISUAL viewport. The frame shrinks to end exactly at the keyboard's top
-    // edge, and the layout viewport is never allowed to scroll (iOS shoves it
-    // around to "help" show the focused input — that's what caused floating
-    // bars and dead gaps).
+    // Keyboard handling for iOS: GLUE the app frame to the visual viewport.
+    // iOS scrolls the layout viewport when the keyboard opens and always wins
+    // that fight — so instead of resisting, the frame translates along with
+    // the visual viewport (offsetTop) and shrinks to its height. The composer
+    // ends up sitting exactly on the keyboard, nothing floats, ever.
     const vv = window.visualViewport;
     if (vv) {
       const update = () => {
-        const kb = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+        const kb = Math.max(0, window.innerHeight - vv.height);
         document.documentElement.style.setProperty('--vvh', `${vv.height}px`);
+        document.documentElement.style.setProperty('--vvo', `${vv.offsetTop}px`);
         document.documentElement.classList.toggle('kb-open', kb > 40);
-        if (window.scrollY !== 0 || document.documentElement.scrollTop !== 0) window.scrollTo(0, 0);
+        // Only snap the layout viewport back once the keyboard is gone.
+        if (kb <= 40 && (window.scrollY !== 0 || document.documentElement.scrollTop !== 0)) {
+          window.scrollTo(0, 0);
+        }
       };
       vv.addEventListener('resize', update);
       vv.addEventListener('scroll', update);
+      window.addEventListener('resize', update);
+      window.addEventListener('pageshow', update);
       update();
+      // iOS reports transitional viewport sizes during PWA launch — re-measure.
+      setTimeout(update, 300);
+      setTimeout(update, 1200);
 
       // Belt and braces: keyboard dismissal via blur + app foregrounding.
       window.addEventListener('focusout', () => setTimeout(update, 80));
@@ -47,12 +64,6 @@
     localStorage.setItem('offhand.onboarded', '1');
     onboarded = true;
   }
-
-  const tabs = [
-    { href: '/', label: 'Home', icon: 'home' },
-    { href: '/session', label: 'Chat', icon: 'chat' },
-    { href: '/settings', label: 'Settings', icon: 'settings' },
-  ];
 </script>
 
 <svelte:head>
@@ -85,7 +96,8 @@
     <div class="frame">
       {#if $page.url.pathname !== '/session'}
         <header>
-          <span class="brand">offhand</span>
+          <MenuButton />
+          <span class="brand">{$page.url.pathname === '/settings' ? 'Settings' : 'offhand'}</span>
           <span class="conn" class:off={$conn.phase !== 'connected' || !$conn.daemonOnline}>
             <span class="dot"></span>
             {$conn.phase !== 'connected' ? 'Connecting' : !$conn.daemonOnline ? 'Offline' : ($conn.host?.hostname ?? 'Connected')}
@@ -103,19 +115,9 @@
       <main>
         {@render children()}
       </main>
-
-      <nav>
-        {#each tabs as tab (tab.href)}
-          <a href={tab.href} class:active={$page.url.pathname === tab.href} aria-label={tab.label}>
-            <span class="icon-wrap">
-              <Icon name={tab.icon} size={21} />
-              {#if tab.href === '/session' && $waiting.size > 0}<span class="badge">{$waiting.size}</span>{/if}
-            </span>
-            <span class="tab-label">{tab.label}</span>
-          </a>
-        {/each}
-      </nav>
     </div>
+
+    <Drawer />
   {/if}
 </div>
 
@@ -205,13 +207,11 @@
     left: 0;
     right: 0;
     height: var(--vvh, 100%);
+    transform: translateY(var(--vvo, 0px));
     display: flex;
   }
-  /* Keyboard open: home-indicator inset is irrelevant (keyboard covers it)
-     and the tab bar just wastes the little space left — the composer owns
-     the bottom edge. */
+  /* Keyboard open: home-indicator inset is irrelevant (keyboard covers it). */
   :global(html.kb-open) { --inset-b: 6px; }
-  :global(html.kb-open) nav { display: none; }
   .rail { display: none; }
   .frame {
     flex: 1;
@@ -224,11 +224,11 @@
   header {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    padding: calc(var(--inset-t)) 1.25rem 0.5rem;
+    gap: 0.6rem;
+    padding: calc(var(--inset-t)) 0.9rem 0.5rem 0.75rem;
     flex-shrink: 0;
   }
-  .brand { font: 700 17px/1 var(--serif); letter-spacing: -0.01em; }
+  .brand { flex: 1; font: 700 18px/1 var(--serif); letter-spacing: -0.01em; }
   .conn {
     display: inline-flex;
     align-items: center;
@@ -265,47 +265,10 @@
     overscroll-behavior: contain;
     display: flex;
     flex-direction: column;
-  }
-  nav {
-    align-self: center;
-    flex-shrink: 0;
-    display: flex;
-    gap: 2px;
-    margin: 0.45rem auto calc(var(--inset-b) + 0.3rem);
-    padding: 4px;
-    background: var(--raised);
-    border: 1px solid var(--hairline);
-    border-radius: 999px;
-    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.4);
-  }
-  nav a {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 0.5rem 0.95rem;
-    border-radius: 999px;
-    color: var(--ghost);
-    text-decoration: none;
-    transition: background 0.15s ease, color 0.15s ease;
-  }
-  nav a.active { background: var(--brand-soft); color: var(--brand); }
-  .tab-label { display: none; font-size: 13px; font-weight: 600; }
-  nav a.active .tab-label { display: inline; }
-  .icon-wrap { position: relative; display: grid; place-items: center; height: 22px; }
-  .badge {
-    position: absolute;
-    top: -4px;
-    right: -11px;
-    background: var(--brand);
-    color: #fff;
-    font-size: 10px;
-    font-weight: 700;
-    border-radius: 8px;
-    padding: 0 4.5px;
-    line-height: 15px;
+    padding-bottom: var(--inset-b);
   }
 
-  /* ≥700px: two-pane — sessions rail left, content right, no bottom nav. */
+  /* ≥700px: two-pane — sessions rail left, content right. */
   @media (min-width: 700px) {
     .rail {
       display: flex;
@@ -335,7 +298,7 @@
       font-weight: 600;
     }
     .rail-settings:hover, .rail-settings.active { background: var(--card); color: var(--ink); }
-    .frame header, .frame nav { display: none; }
+    .frame header { display: none; }
     main { padding-top: var(--inset-t); }
   }
 </style>

@@ -119,6 +119,9 @@ importers:
       '@offhand/shared':
         specifier: workspace:*
         version: link:../shared
+      gsap:
+        specifier: ^3.15.0
+        version: 3.15.0
       jsqr:
         specifier: ^1.4.0
         version: 1.4.0
@@ -949,6 +952,9 @@ packages:
     resolution: {integrity: sha512-5xoDfX+fL7faATnagmWPpbFtwh/R77WmMMqqHGS65C3vvB0YHrgF+B1YmZ3441tMj5n63k0212XNoJwzlhffQw==}
     engines: {node: ^8.16.0 || ^10.6.0 || >=11.0.0}
     os: [darwin]
+
+  gsap@3.15.0:
+    resolution: {integrity: sha512-dMW4CWBTUK1AEEDeZc1g4xpPGIrSf9fJF960qbTZmN/QwZIWY5wgliS6JWl9/25fpTGJrMRtSjGtOmPnfjZB+A==}
 
   http_ece@1.2.0:
     resolution: {integrity: sha512-JrF8SSLVmcvc5NducxgyOrKXe3EsyHMgBFgSaIUGmArKe+rwr0uphRkRXvwiom3I+fpIfoItveHrfudL8/rxuA==}
@@ -2153,6 +2159,8 @@ snapshots:
 
   fsevents@2.3.3:
     optional: true
+
+  gsap@3.15.0: {}
 
   http_ece@1.2.0: {}
 

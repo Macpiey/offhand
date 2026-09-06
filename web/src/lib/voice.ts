@@ -24,13 +24,35 @@ function impl(): SR | null {
 }
 
 export function voiceAvailable(): boolean {
-  return typeof window !== 'undefined' && impl() !== null;
+  if (typeof window === 'undefined' || impl() === null) return false;
+  // iOS exposes webkitSpeechRecognition but it silently never delivers events
+  // in standalone PWAs (freezes the UI in "listening"). The iOS keyboard's
+  // dictation mic is the native, better path there.
+  if (/iP(hone|ad|od)/.test(navigator.userAgent)) return false;
+  return true;
 }
 
 export function listen(onText: (text: string, final: boolean) => void): () => void {
   const Rec = impl();
   if (!Rec) return () => {};
   const rec = new Rec();
+  let done = false;
+  const finish = () => {
+    if (done) return;
+    done = true;
+    clearTimeout(guard);
+    onText('', true);
+  };
+  // Safety: if the platform never delivers a result (broken implementations),
+  // end cleanly instead of freezing in the "listening" state.
+  const guard = setTimeout(() => {
+    try {
+      rec.stop();
+    } catch {
+      /* already stopped */
+    }
+    finish();
+  }, 8000);
   rec.lang = navigator.language || 'en-US';
   rec.interimResults = true;
   rec.continuous = false;
@@ -39,8 +61,15 @@ export function listen(onText: (text: string, final: boolean) => void): () => vo
     for (let i = 0; i < e.results.length; i++) text += e.results[i]![0]!.transcript;
     onText(text, false);
   };
-  rec.onend = () => onText('', true);
-  rec.onerror = () => onText('', true);
+  rec.onend = finish;
+  rec.onerror = finish;
   rec.start();
-  return () => rec.stop();
+  return () => {
+    try {
+      rec.stop();
+    } catch {
+      /* noop */
+    }
+    finish();
+  };
 }

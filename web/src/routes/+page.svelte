@@ -1,15 +1,15 @@
 <script lang="ts">
-  import { sessions, waiting, workspaces, runners } from '$lib/stores.js';
+  import { sessions, waiting, workspaces, runners, newSessionOpen } from '$lib/stores.js';
   import { send } from '$lib/client.js';
   import { portal } from '$lib/portal.js';
   import SessionList from '$lib/components/SessionList.svelte';
   import Icon from '$lib/components/Icon.svelte';
 
-  let showNew = $state(false);
   let newWorkspace = $state('');
   let newRunner = $state('');
   let newModel = $state('');
   let newLabel = $state('');
+  const showNew = $derived($newSessionOpen);
 
   const live = $derived($sessions.filter((s) => !s.archived));
   const working = $derived(live.filter((s) => s.busy).length);
@@ -35,7 +35,7 @@
       ...(newModel ? { model: newModel } : {}),
       ...(newLabel.trim() ? { label: newLabel.trim() } : {}),
     });
-    showNew = false;
+    newSessionOpen.set(false);
     newLabel = '';
     newModel = '';
   }
@@ -47,13 +47,28 @@
     <p class="status" class:hot={$waiting.size > 0}>{statusLine}</p>
   </div>
 
+  <div class="strip">
+    <div class="stat">
+      <span class="n">{live.length}</span>
+      <span class="l">Sessions</span>
+    </div>
+    <div class="stat" class:on={working > 0}>
+      <span class="n">{working}</span>
+      <span class="l">Working</span>
+    </div>
+    <div class="stat" class:hot={$waiting.size > 0}>
+      <span class="n">{$waiting.size}</span>
+      <span class="l">Need you</span>
+    </div>
+  </div>
+
   <SessionList />
 
-  <button class="new" onclick={() => (showNew = true)}><Icon name="plus" size={16} />New session</button>
+  <button class="new" onclick={() => newSessionOpen.set(true)}><Icon name="plus" size={16} />New session</button>
 </div>
 
 {#if showNew}
-  <div class="overlay" use:portal onclick={() => (showNew = false)} onkeydown={(e) => e.key === 'Escape' && (showNew = false)} role="presentation">
+  <div class="overlay" use:portal onclick={() => newSessionOpen.set(false)} onkeydown={(e) => e.key === 'Escape' && newSessionOpen.set(false)} role="presentation">
     <div class="sheet" onclick={(e) => e.stopPropagation()} role="dialog" aria-label="New session" tabindex="-1" onkeydown={() => {}}>
       <div class="handle"></div>
       <h2>New session</h2>
@@ -102,6 +117,22 @@
   h1 { font: 700 26px/1.2 var(--serif); letter-spacing: -0.02em; margin: 0; }
   .status { color: var(--mute); margin: 0.2rem 0 0; font-size: 15px; }
   .status.hot { color: var(--warn); font-weight: 600; }
+  .strip { display: flex; gap: 0.55rem; }
+  .stat {
+    flex: 1;
+    background: var(--card);
+    border: 1px solid var(--hairline);
+    border-radius: var(--r-card);
+    padding: 0.7rem 0.9rem;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .stat .n { font: 700 20px/1 var(--serif); }
+  .stat .l { font-size: 11px; font-weight: 600; color: var(--ghost); text-transform: uppercase; letter-spacing: 0.06em; }
+  .stat.on .n { color: var(--brand); }
+  .stat.hot .n { color: var(--warn); }
+  .stat.hot { border-color: color-mix(in srgb, var(--warn) 40%, transparent); }
   .new { margin-top: auto; align-self: stretch; height: 50px; font-size: 15px; border-radius: 14px; }
 
   .overlay {
@@ -113,7 +144,7 @@
     align-items: flex-end;
     justify-content: center;
     /* Keep the sheet above the iOS keyboard when an input inside has focus. */
-    padding-bottom: calc(100dvh - var(--vvh, 100dvh));
+    padding-bottom: calc(100dvh - var(--vvh, 100dvh) - var(--vvo, 0px));
   }
   .sheet {
     width: 100%;

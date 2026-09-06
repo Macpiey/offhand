@@ -20,8 +20,6 @@
   let area = $state<HTMLTextAreaElement | null>(null);
   const hasVoice = voiceAvailable();
 
-  const chips = ['Run the tests', 'Fix it', 'Show me a screenshot', 'Commit the changes'];
-
   function autosize(): void {
     if (!area) return;
     area.style.height = 'auto';
@@ -70,12 +68,6 @@
       <span class="w-text">Agent working{queued > 0 ? ` · ${queued} queued` : ''}</span>
       <button class="stop" onclick={onstop}><Icon name="stop" size={12} />Stop</button>
     </div>
-  {:else}
-    <div class="chips">
-      {#each chips as chip (chip)}
-        <button class="chip" onclick={() => onsubmit(chip)}>{chip}</button>
-      {/each}
-    </div>
   {/if}
   <form onsubmit={submit}>
     <div class="field">
@@ -105,20 +97,6 @@
     padding: 0.35rem 1rem var(--inset-b);
     transition: padding-bottom 0.15s ease-out;
   }
-  .chips { display: flex; gap: 0.4rem; overflow-x: auto; padding-bottom: 0.5rem; }
-  .chip {
-    height: 30px;
-    background: transparent;
-    border: 1px solid var(--hairline-2);
-    color: var(--mute);
-    font-size: 12px;
-    font-weight: 500;
-    padding: 0 0.85rem;
-    border-radius: 999px;
-    white-space: nowrap;
-    flex-shrink: 0;
-  }
-  .chip:active { background: var(--card); color: var(--ink); }
   .working {
     display: flex;
     align-items: center;

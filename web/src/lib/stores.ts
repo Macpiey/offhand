@@ -60,6 +60,11 @@ export const waiting = writable<Set<string>>(new Set());
 /** True right after a successful pairing — the layout shows the verify ritual. */
 export const justPaired = writable(false);
 
+/** Slide-in navigation drawer (phone layout). */
+export const drawerOpen = writable(false);
+/** Home listens: opens the New-session sheet (triggerable from the drawer). */
+export const newSessionOpen = writable(false);
+
 currentSessionId.subscribe((id) => {
   if (typeof localStorage !== 'undefined' && id) localStorage.setItem('offhand.currentSession', id);
 });
