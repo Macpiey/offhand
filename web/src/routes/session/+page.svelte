@@ -187,11 +187,19 @@
     queued={session.queuedPrompts}
     onsubmit={submitPrompt}
     onstop={stopRun}
+    modes={MODES}
+    currentMode={session.permissionMode ?? 'guarded'}
+    onModeChange={(id) => send({ type: 'session-update', sessionId: session.id, permissionMode: id as 'guarded' | 'plan' | 'acceptEdits' | 'bypass' })}
+    models={runner?.models ?? []}
+    currentModel={session.model ?? ''}
+    onModelChange={(id) => send({ type: 'session-update', sessionId: session.id, model: id })}
+    efforts={EFFORTS.filter((e) => e.id !== '')}
+    currentEffort={session.effort ?? ''}
+    onEffortChange={(id) => id && send({ type: 'session-update', sessionId: session.id, effort: id as 'low' | 'medium' | 'high' | 'max' })}
     modeLabel={MODES.find((m) => m.id === (session.permissionMode ?? 'guarded'))?.label ?? ''}
     modelLabel={session.model || 'Default model'}
     effortLabel={session.effort ? EFFORTS.find((e) => e.id === session.effort)?.label ?? '' : ''}
     ctxPct={ctxPct}
-    onConfig={() => (configOpen = true)}
   />
 
   {#if pendingApproval}

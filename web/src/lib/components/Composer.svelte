@@ -14,21 +14,37 @@
     queued,
     onsubmit,
     onstop,
+    modes = [],
+    currentMode = '',
+    onModeChange,
+    models = [],
+    currentModel = '',
+    onModelChange,
+    efforts = [],
+    currentEffort = '',
+    onEffortChange,
     modeLabel = '',
     modelLabel = '',
     effortLabel = '',
     ctxPct = null,
-    onConfig,
   }: {
     busy: boolean;
     queued: number;
     onsubmit: (text: string, attachments: Attachment[]) => void;
     onstop: () => void;
+    modes?: { id: string; label: string; desc: string }[];
+    currentMode?: string;
+    onModeChange?: (id: string) => void;
+    models?: string[];
+    currentModel?: string;
+    onModelChange?: (id: string) => void;
+    efforts?: { id: string; label: string }[];
+    currentEffort?: string;
+    onEffortChange?: (id: string) => void;
     modeLabel?: string;
     modelLabel?: string;
     effortLabel?: string;
     ctxPct?: number | null;
-    onConfig?: () => void;
   } = $props();
 
   // Context gauge ring (r=7 → circumference ≈ 44).
@@ -42,6 +58,29 @@
   let attachments = $state<Attachment[]>([]);
   let uploading = $state(false);
   const hasVoice = voiceAvailable();
+
+  let modeMenuOpen = $state(false);
+  let modelMenuOpen = $state(false);
+
+  function toggleModeMenu(): void {
+    modelMenuOpen = false;
+    modeMenuOpen = !modeMenuOpen;
+  }
+  function toggleModelMenu(): void {
+    modeMenuOpen = false;
+    modelMenuOpen = !modelMenuOpen;
+  }
+  function pickMode(id: string): void {
+    onModeChange?.(id);
+    modeMenuOpen = false;
+  }
+  function pickModel(id: string): void {
+    onModelChange?.(id);
+    modelMenuOpen = false;
+  }
+  function pickEffort(id: string): void {
+    onEffortChange?.(id);
+  }
 
   async function onFiles(e: Event): Promise<void> {
     const files = (e.target as HTMLInputElement).files;
@@ -138,22 +177,57 @@
         <button type="button" class="round" onclick={() => fileInput?.click()} aria-label="Attach file">
           <Icon name="plus" size={17} />
         </button>
-        {#if onConfig && modeLabel}
-          <button type="button" class="pill" onclick={onConfig} aria-label="Permission mode">
-            <Icon name="shield" size={12} />{modeLabel}
-          </button>
+        {#if modes.length > 0 && modeLabel}
+          <div class="pill-wrap">
+            <button type="button" class="pill" onclick={toggleModeMenu} aria-label="Permission mode" aria-expanded={modeMenuOpen}>
+              <Icon name="shield" size={12} />{modeLabel}
+            </button>
+            {#if modeMenuOpen}
+              <div class="menu-scrim" onclick={() => (modeMenuOpen = false)} onkeydown={() => {}} role="presentation"></div>
+              <div class="popover mode-popover">
+                {#each modes as m (m.id)}
+                  <button type="button" class="pop-opt" class:sel={currentMode === m.id} onclick={() => pickMode(m.id)}>
+                    <span class="radio" class:on={currentMode === m.id}></span>
+                    <span class="pop-copy"><span class="pop-label">{m.label}</span><span class="pop-desc">{m.desc}</span></span>
+                  </button>
+                {/each}
+              </div>
+            {/if}
+          </div>
         {/if}
         <span class="spacer"></span>
-        {#if onConfig && (modelLabel || ctxPct !== null)}
-          <button type="button" class="pill" onclick={onConfig} aria-label="Model and usage">
-            {#if ctxPct !== null}
-              <svg class="ring" viewBox="0 0 18 18" class:hot={ctxPct > 80}>
-                <circle class="bg" cx="9" cy="9" r="7" />
-                <circle class="fg" cx="9" cy="9" r="7" stroke-dasharray="{(ctxPct / 100) * RING} {RING}" />
-              </svg>
+        {#if (models.length > 0 || ctxPct !== null) && (modelLabel || ctxPct !== null)}
+          <div class="pill-wrap">
+            <button type="button" class="pill" onclick={toggleModelMenu} aria-label="Model and usage" aria-expanded={modelMenuOpen}>
+              {#if ctxPct !== null}
+                <svg class="ring" viewBox="0 0 18 18" class:hot={ctxPct > 80}>
+                  <circle class="bg" cx="9" cy="9" r="7" />
+                  <circle class="fg" cx="9" cy="9" r="7" stroke-dasharray="{(ctxPct / 100) * RING} {RING}" />
+                </svg>
+              {/if}
+              {modelLabel}{effortLabel ? ` · ${effortLabel}` : ''}
+            </button>
+            {#if modelMenuOpen}
+              <div class="menu-scrim" onclick={() => (modelMenuOpen = false)} onkeydown={() => {}} role="presentation"></div>
+              <div class="popover model-popover">
+                {#if models.length > 0}
+                  <span class="pop-group">Model</span>
+                  <button type="button" class="pop-row" class:sel={!currentModel} onclick={() => pickModel('')}>Default</button>
+                  {#each models as m (m)}
+                    <button type="button" class="pop-row" class:sel={currentModel === m} onclick={() => pickModel(m)}>{m}</button>
+                  {/each}
+                {/if}
+                {#if efforts.length > 0}
+                  <span class="pop-group">Effort{currentEffort ? '' : ' · default'}</span>
+                  <div class="seg">
+                    {#each efforts as ef (ef.id)}
+                      <button type="button" class="seg-btn" class:sel={currentEffort === ef.id} onclick={() => pickEffort(ef.id)}>{ef.label}</button>
+                    {/each}
+                  </div>
+                {/if}
+              </div>
             {/if}
-            {modelLabel}{effortLabel ? ` · ${effortLabel}` : ''}
-          </button>
+          </div>
         {/if}
         {#if hasVoice}
           <button type="button" class="round" class:listening onclick={toggleVoice} aria-label="Voice input">
@@ -241,6 +315,76 @@
     white-space: nowrap;
   }
   .pill:active { background: var(--bg); color: var(--ink); }
+  .pill-wrap { position: relative; display: flex; align-items: center; }
+  .menu-scrim { position: fixed; inset: 0; z-index: 35; }
+  .popover {
+    position: absolute;
+    bottom: calc(100% + 10px);
+    z-index: 36;
+    background: var(--raised);
+    border: 1px solid var(--hairline-2);
+    border-radius: 14px;
+    padding: 0.5rem;
+    box-shadow: 0 10px 32px rgba(0, 0, 0, 0.45);
+    animation: pop 0.12s ease-out;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    max-width: 78vw;
+  }
+  .mode-popover { left: 0; min-width: 230px; }
+  .model-popover { right: 0; min-width: 190px; }
+  @keyframes pop { from { opacity: 0; transform: translateY(4px); } }
+  .pop-opt {
+    justify-content: flex-start;
+    min-height: 44px;
+    height: auto;
+    padding: 0.45rem 0.7rem;
+    background: transparent;
+    color: var(--ink);
+    font-weight: 500;
+    gap: 0.6rem;
+    border-radius: 10px;
+    text-align: left;
+  }
+  .pop-opt:active { background: var(--card); }
+  .pop-opt.sel { background: color-mix(in srgb, var(--brand) 12%, transparent); }
+  .radio { width: 15px; height: 15px; border-radius: 50%; border: 1.5px solid var(--ghost); flex-shrink: 0; }
+  .radio.on { border-color: var(--brand); background: radial-gradient(circle, var(--brand) 45%, transparent 50%); }
+  .pop-copy { display: flex; flex-direction: column; gap: 1px; }
+  .pop-label { font-size: 13.5px; font-weight: 600; }
+  .pop-desc { font-size: 11px; color: var(--mute); font-weight: 400; }
+  .pop-group {
+    font-size: 10.5px;
+    font-weight: 700;
+    color: var(--ghost);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    padding: 0.15rem 0.4rem 0;
+  }
+  .pop-row {
+    justify-content: flex-start;
+    height: 38px;
+    padding: 0 0.7rem;
+    background: transparent;
+    color: var(--ink);
+    font-weight: 500;
+    font-size: 13.5px;
+    border-radius: 9px;
+  }
+  .pop-row:active { background: var(--card); }
+  .pop-row.sel { background: color-mix(in srgb, var(--brand) 12%, transparent); color: var(--brand); font-weight: 600; }
+  .seg { display: flex; gap: 4px; background: var(--bg); border: 1px solid var(--hairline); border-radius: 11px; padding: 4px; margin-top: 0.2rem; }
+  .seg-btn {
+    flex: 1;
+    height: 32px;
+    background: transparent;
+    color: var(--mute);
+    font-size: 12px;
+    border-radius: 8px;
+    padding: 0;
+  }
+  .seg-btn.sel { background: var(--card); color: var(--ink); }
   .ring { width: 15px; height: 15px; transform: rotate(-90deg); flex-shrink: 0; }
   .ring circle { fill: none; stroke-width: 2.6; }
   .ring .bg { stroke: var(--raised); }
