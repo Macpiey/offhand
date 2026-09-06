@@ -32,8 +32,6 @@
 </script>
 
 <div class="page">
-  <h1>Settings</h1>
-
   <section>
     <h2>Device</h2>
     <div class="card">
@@ -150,7 +148,6 @@
 
 <style>
   .page { padding: 0.4rem 1.25rem 2rem; display: flex; flex-direction: column; gap: 1.25rem; }
-  h1 { font: 700 26px/1.2 var(--serif); letter-spacing: -0.02em; margin: 0.3rem 0 0; }
   h2 {
     font-size: 11px;
     font-weight: 700;
@@ -245,3 +242,4 @@
   }
   .destructive:active { background: none; }
 </style>
+

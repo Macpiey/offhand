@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { page } from '$app/stores';
 
   // In-app boot/navigation failures are almost always a stale cached chunk
   // after a deploy (there is a ~2 min window where shell and chunks can be
@@ -55,6 +56,9 @@
   {:else}
     <h1>Something broke</h1>
     <p>Close the app fully and open it again.</p>
+    {#if $page.error?.message}
+      <pre class="detail">{$page.status} · {$page.error.message}</pre>
+    {/if}
     <button onclick={() => location.replace('/?v=' + Date.now())}>Reload</button>
   {/if}
 </div>
@@ -83,4 +87,12 @@
   }
   @keyframes r { to { transform: rotate(360deg); } }
   button { margin-top: 0.6rem; }
+  .detail {
+    max-width: 90vw;
+    margin: 0.3rem 0 0;
+    font: 11px/1.5 var(--mono);
+    color: var(--ghost);
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
 </style>

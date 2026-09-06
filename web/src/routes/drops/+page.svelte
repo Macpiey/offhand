@@ -8,6 +8,48 @@
   let pendingBlobId = $state('');
   let sendStatus = $state('');
   let error = $state('');
+  let noteOpen = $state(false);
+  let noteText = $state('');
+  let previews = $state<Map<number, string>>(new Map());
+
+  async function sendNote(): Promise<void> {
+    const text = noteText.trim();
+    if (!text) return;
+    error = '';
+    sendStatus = 'Sending note…';
+    try {
+      const stamp = new Date().toTimeString().slice(0, 5).replace(':', '');
+      const file = new File([text], `note-${stamp}.txt`, { type: 'text/plain' });
+      const uploaded = await sendDrop(file);
+      pendingBlobId = uploaded.blobId;
+      sendStatus = 'Sent. Waiting for PC confirmation…';
+      noteText = '';
+      noteOpen = false;
+    } catch (e) {
+      sendStatus = '';
+      error = e instanceof Error ? e.message : String(e);
+    }
+  }
+
+  const isText = (d: DropItem) => d.mime.startsWith('text/') && d.size < 65_536;
+
+  async function togglePreview(drop: DropItem): Promise<void> {
+    const next = new Map(previews);
+    if (next.has(drop.seq)) {
+      next.delete(drop.seq);
+    } else {
+      const bytes = await fetchArtifact(drop.blobId);
+      next.set(drop.seq, new TextDecoder().decode(bytes));
+    }
+    previews = next;
+  }
+
+  async function copyText(drop: DropItem): Promise<void> {
+    const text = previews.get(drop.seq) ?? new TextDecoder().decode(await fetchArtifact(drop.blobId));
+    await navigator.clipboard.writeText(text);
+    sendStatus = 'Copied to clipboard.';
+    setTimeout(() => (sendStatus = ''), 1500);
+  }
 
   const sortedDrops = $derived([...$drops].sort((a, b) => b.seq - a.seq));
 
@@ -99,19 +141,20 @@
 </script>
 
 <div class="page">
-  <div class="hero">
-    <h1>Drops</h1>
-    <p>End-to-end encrypted file handoff between this phone and your PC.</p>
-  </div>
-
   <section class="send-card">
     <div>
       <span class="eyebrow">Phone → PC</span>
-      <h2>Send a file to your PC</h2>
-      <p>It lands in Downloads\offhand with a desktop notification.</p>
+      <p>Files land in Downloads\offhand · short notes go straight to the PC clipboard.</p>
     </div>
     <input bind:this={fileInput} class="hidden" type="file" onchange={chooseFile} />
-    <button onclick={() => fileInput?.click()}><Icon name="send" size={16} />Choose file</button>
+    <div class="send-row">
+      <button onclick={() => fileInput?.click()}><Icon name="send" size={15} />Send a file</button>
+      <button class="ghost" onclick={() => (noteOpen = !noteOpen)}><Icon name="copy" size={15} />Send text</button>
+    </div>
+    {#if noteOpen}
+      <textarea rows="3" placeholder="Paste or type — arrives on your PC clipboard" bind:value={noteText}></textarea>
+      <button class="note-send" disabled={!noteText.trim()} onclick={sendNote}>Send to PC</button>
+    {/if}
     {#if sendStatus}<p class="status ok">{sendStatus}</p>{/if}
     {#if error}<p class="status warn">{error}</p>{/if}
   </section>
@@ -142,6 +185,13 @@
             {#if drop.direction === 'to-phone' && typeof navigator.share === 'function'}
               <button class="share" onclick={() => void share(drop)} disabled={busySeq === drop.seq}>Share</button>
             {/if}
+            {#if isText(drop)}
+              <button class="share" onclick={() => void togglePreview(drop)}>{previews.has(drop.seq) ? 'Hide' : 'View'}</button>
+              <button class="share" onclick={() => void copyText(drop)}>Copy</button>
+            {/if}
+            {#if previews.has(drop.seq)}
+              <pre class="preview">{previews.get(drop.seq)}</pre>
+            {/if}
           </article>
         {/each}
       </div>
@@ -151,8 +201,26 @@
 
 <style>
   .page { padding: 0.4rem 1.25rem 2rem; display: flex; flex-direction: column; gap: 1rem; }
-  .hero h1 { font: 700 26px/1.2 var(--serif); letter-spacing: -0.02em; margin: 0.3rem 0 0; }
-  .hero p, .send-card p { margin: 0.25rem 0 0; color: var(--mute); font-size: 13.5px; }
+  .send-card p { margin: 0.25rem 0 0; color: var(--mute); font-size: 13.5px; }
+  .send-row { display: flex; gap: 0.5rem; }
+  .send-row button { flex: 1; height: 44px; border-radius: 12px; }
+  .ghost { background: var(--bg); border: 1px solid var(--hairline-2); color: var(--ink); }
+  .ghost:active { background: var(--bg); }
+  .note-send { height: 44px; border-radius: 12px; }
+  .preview {
+    grid-column: 1 / -1;
+    width: 100%;
+    margin: 0.4rem 0 0;
+    background: var(--bg);
+    border: 1px solid var(--hairline);
+    border-radius: 10px;
+    padding: 0.6rem 0.8rem;
+    font: 12px/1.55 var(--mono);
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 40dvh;
+    overflow-y: auto;
+  }
   .eyebrow {
     color: var(--ghost);
     font-size: 11px;
@@ -160,7 +228,6 @@
     letter-spacing: 0.07em;
     text-transform: uppercase;
   }
-  h2 { margin: 0.2rem 0 0; font-size: 16px; }
   .send-card, .empty, .card {
     background: var(--card);
     border: 1px solid var(--hairline);
@@ -174,7 +241,7 @@
   .empty { display: grid; place-items: center; gap: 0.35rem; padding: 2.3rem 1rem; color: var(--ghost); }
   .empty p { margin: 0; }
   .list { display: flex; flex-direction: column; gap: 0.55rem; margin-top: 0.5rem; }
-  .card { padding: 0.35rem; display: flex; align-items: center; gap: 0.35rem; }
+  .card { padding: 0.35rem; display: flex; align-items: center; gap: 0.35rem; flex-wrap: wrap; }
   .main {
     flex: 1;
     min-width: 0;

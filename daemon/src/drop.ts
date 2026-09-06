@@ -137,36 +137,33 @@ export function startDropOutboxWatcher(
   };
 }
 
-export function showDropToast(savedPath: string): void {
-  const title = psQuote('offhand — file received');
-  const body = psQuote(`Saved to ${savedPath}`);
-  const script = `
-$title = ${title}
-$body = ${body}
-try {
-  [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null
-  [Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, ContentType = WindowsRuntime] | Out-Null
-  $safeTitle = [System.Security.SecurityElement]::Escape($title)
-  $safeBody = [System.Security.SecurityElement]::Escape($body)
-  $xml = New-Object Windows.Data.Xml.Dom.XmlDocument
-  $xml.LoadXml("<toast><visual><binding template=\\"ToastGeneric\\"><text>$safeTitle</text><text>$safeBody</text></binding></visual></toast>")
-  $toast = [Windows.UI.Notifications.ToastNotification]::new($xml)
-  [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier("offhand").Show($toast)
-} catch {
-  try {
-    Add-Type -AssemblyName System.Windows.Forms
-    Add-Type -AssemblyName System.Drawing
-    $n = New-Object System.Windows.Forms.NotifyIcon
-    $n.Icon = [System.Drawing.SystemIcons]::Information
-    $n.Visible = $true
-    $n.ShowBalloonTip(5000, $title, $body, [System.Windows.Forms.ToolTipIcon]::Info)
-    Start-Sleep -Seconds 5
-    $n.Dispose()
-  } catch {}
-}`;
-  const child = spawn('powershell', ['-NoProfile', '-Command', script], {
+/** Show a Windows toast about a received drop. Uses PowerShell's registered
+ * AppUserModelID (unregistered app ids get silently dropped by Windows).
+ * `clipboard` additionally copies text content so short notes paste anywhere. */
+export function showDropToast(savedPath: string, textToClipboard?: string): void {
+  const appId = '{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\\WindowsPowerShell\\v1.0\\powershell.exe';
+  const title = 'offhand — drop received';
+  const body = textToClipboard !== undefined ? 'Copied to clipboard · also saved to Downloads\\offhand' : `Saved to ${savedPath}`;
+  const lines = [
+    textToClipboard !== undefined ? `Set-Clipboard -Value ${psQuote(textToClipboard)}` : '',
+    `[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null`,
+    `[Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom, ContentType = WindowsRuntime] | Out-Null`,
+    `$xml = [Windows.Data.Xml.Dom.XmlDocument]::new()`,
+    `$t = [System.Security.SecurityElement]::Escape(${psQuote(title)})`,
+    `$b = [System.Security.SecurityElement]::Escape(${psQuote(body)})`,
+    `$xml.LoadXml('<toast><visual><binding template="ToastGeneric"><text>' + $t + '</text><text>' + $b + '</text></binding></visual></toast>')`,
+    `$toast = [Windows.UI.Notifications.ToastNotification]::new($xml)`,
+    `[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier(${psQuote(appId)}).Show($toast)`,
+  ].filter(Boolean);
+  const child = spawn('powershell', ['-NoProfile', '-Command', lines.join('; ')], {
     windowsHide: true,
-    stdio: 'ignore',
+    stdio: ['ignore', 'ignore', 'pipe'],
+  });
+  let errTail = '';
+  child.stderr?.setEncoding('utf8');
+  child.stderr?.on('data', (c: string) => (errTail = (errTail + c).slice(-500)));
+  child.on('exit', (code) => {
+    if (code !== 0) console.error(`drop: toast failed (${code}): ${errTail}`);
   });
   child.on('error', () => {});
   console.log(`drop: saved ${savedPath}`);

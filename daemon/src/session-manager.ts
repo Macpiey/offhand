@@ -170,7 +170,9 @@ export class SessionManager {
         try {
           const bytes = await this.dropFetcher(msg.blobId);
           const savedPath = saveIncomingDrop(msg.name, bytes);
-          showDropToast(savedPath);
+          // Short text drops go straight to the PC clipboard — paste anywhere.
+          const isShortText = msg.mime.startsWith('text/') && bytes.byteLength < 16_384;
+          showDropToast(savedPath, isShortText ? new TextDecoder().decode(bytes) : undefined);
           this.record(DROP_LOG_SESSION_ID, (seq) => ({
             type: 'drop',
             seq,

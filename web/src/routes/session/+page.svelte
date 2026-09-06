@@ -130,7 +130,7 @@
         <Icon name="ellipsis" size={17} />
       </button>
     </div>
-    <div class="ctx-meta">
+    <button class="ctx-meta" onclick={() => (configOpen = true)} aria-label="Session settings">
       <span class="status-dot" class:off={$conn.phase !== 'connected' || !$conn.daemonOnline}></span>
       <span>{runner?.name ?? session.runnerId}{session.model ? ` · ${session.model}` : ''}</span>
       {#if workspace?.gitBranch}<span class="sep">·</span><span class="mono">{workspace.gitBranch}</span>{/if}
@@ -142,7 +142,8 @@
         </span>
       {/if}
       {#if runner && !runner.supportsApprovals}<span class="sep">·</span><span class="warn">unguarded</span>{/if}
-    </div>
+      <Icon name="chevron-down" size={11} />
+    </button>
     {#if session.busy}<div class="shimmer"></div>{/if}
   </div>
 
@@ -295,7 +296,15 @@
     margin-top: 1px;
     white-space: nowrap;
     overflow: hidden;
+    background: transparent;
+    border: none;
+    height: auto;
+    padding: 0.15rem 0;
+    font-weight: 500;
+    cursor: pointer;
+    max-width: 100%;
   }
+  .ctx-meta:active { background: transparent; transform: none; }
   .sep { opacity: 0.5; }
   .status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); flex-shrink: 0; }
   .status-dot.off { background: var(--warn); }
